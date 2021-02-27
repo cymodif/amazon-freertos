@@ -1,6 +1,6 @@
 /*
- * FreeRTOS V202007.00
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS V201910.00
+ * Copyright (C) 2019 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -34,7 +34,7 @@
 #include "aws_test_runner_config.h"
 
 /*
- * @brief If set to 1, will run DQP_FR tests only.
+ * @brief If set to 1, will run AFQP tests only.
  */
 #ifdef testrunnerAFQP_ENABLED
     #define testrunnerTEST_FILTER    "AFQP"

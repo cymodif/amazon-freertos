@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Trace Recorder Library for Tracealyzer v4.3.5.1
+ * Trace Recorder Library for Tracealyzer v3.1.2
  * Percepio AB, www.percepio.com
  *
  * trcStreamingPort.c
@@ -53,7 +53,8 @@
 /* TCP/IP includes */
 #include "lwip/tcpip.h"
 #include "lwip/sockets.h"
-#include "lwip/errno.h"
+
+int errno;
 
 #define TRC_TCPIP_PORT 12000
 

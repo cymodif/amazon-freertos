@@ -1,8 +1,3 @@
-if (AFR_ENABLE_UNIT_TESTS)
-    add_subdirectory(utest)
-    return()
-endif()
-
 afr_module()
 
 afr_set_lib_metadata(ID "ble")
@@ -36,9 +31,10 @@ afr_module_sources(
 
 afr_module_include_dirs(
     ${AFR_CURRENT_MODULE}
-    PUBLIC
-        "${inc_dir}"
+    PUBLIC "${inc_dir}"
+        "$<${AFR_IS_TESTING}:${inc_dir}/private>"
     PRIVATE
+        "${inc_dir}/private"
         "${test_dir}"
 )
 

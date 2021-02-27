@@ -30,22 +30,9 @@
 #--------------------------------------------------------------------
 # Cypress Defines
 #
-include("${AFR_VENDORS_DIR}/cypress/MTB/psoc6/cmake/cy_defines.cmake")
-include("${cy_psoc6_dir}/cmake/cy_create_linked_target.cmake")
-include("${cy_psoc6_dir}/cmake/cy_create_exe_target.cmake")
+include("${AFR_VENDORS_DIR}/cypress/psoc6/cmake/cy_defines.cmake")
 
-#--------------------------------------------------------------------
-# Default linker script for this board
-#  (modified for OTA builds)
-#
-set(ENV{LINKER_SCRIPT_NAME} "cy8c6xx7_cm4_dual")
-
-#--------------------------------------------------------------------
-# Features
-# Enable BLE
-if (NOT DEFINED BLE_SUPPORTED)
-set(BLE_SUPPORTED               "1" )
-endif()
+include("${cy_psoc6_dir}/cmake/cy_kit_utils.cmake")
 
 # -------------------------------------------------------------------------------------------------
 # Amazon FreeRTOS Console metadata
@@ -67,18 +54,9 @@ afr_set_board_metadata(IDE_ModusToolbox_NAME "ModusToolbox")
 afr_set_board_metadata(IDE_ModusToolbox_COMPILER "GCC")
 afr_set_board_metadata(IDE_ModusToolbox_PROJECT_LOCATION "${AFR_ROOT_DIR}/projects/cypress/${AFR_BOARD_NAME}/ModusToolbox/aws_demos")
 
-cy_add_link_libraries(
+cy_kit_generate(
     DEVICE "CY8C6247BZI-D54"
-    PORT_DIR "${cy_board_dir}/ports"
-    BSP_DIR "${app_dir}/application_code/cy_code"
-    CONFIG_DIRS "${include_dirs}"
-    COMPONENTS "4343W;CM0P_SLEEP;CAPSENSE;UDB_SDIO_P2"
+    LINKER_SCRIPT "cy8c6xx7_cm4_dual"
+    COMPONENTS "4343W;CM0P_SLEEP;CAPSENSE"
     DEFINES "CYHAL_UDB_SDIO;CY_USE_LWIP"
 )
-
-if (NOT DEFINED LIB_MODE)
-    cy_create_exe_target(
-        EXE_APP_NAME ""
-        SOURCE_DIRS "${app_dir}/application_code"
-    )
-endif()

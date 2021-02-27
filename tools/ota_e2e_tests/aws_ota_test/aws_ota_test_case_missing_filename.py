@@ -1,6 +1,6 @@
 """
-FreeRTOS
-Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+Amazon FreeRTOS
+Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,17 +23,20 @@ http://aws.amazon.com/freertos
 http://www.FreeRTOS.org
 
 """
-from .aws_ota_test_case import OtaTestCase
-import os
+from .aws_ota_test_case import *
+from .aws_ota_aws_agent import *
 
-
-class OtaTestMissingFilename(OtaTestCase):
-    """
-    This test verifies that device will reject an update if the job document is missing the required
-    `fileName` parameter.
-    """
-
-    is_positive = False
+class OtaTestMissingFilename( OtaTestCase ):
+    NAME = 'OtaTestMissingFilename'
+    def __init__(self, boardConfig, otaProject, otaAwsAgent, flashComm):
+        super(OtaTestMissingFilename, self).__init__(
+            OtaTestMissingFilename.NAME,
+            False,
+            boardConfig,
+            otaProject,
+            otaAwsAgent,
+            flashComm
+        )
 
     def run(self):
         # Increase the version of the OTA image.
@@ -59,12 +62,11 @@ class OtaTestMissingFilename(OtaTestCase):
         )
         # Create an OTA update without the expected 'fileName' parameter.
         otaUpdateId = self._otaAwsAgent.createOtaUpdate(
-            protocols=[self._protocol],
-            deploymentFiles=[
+            deploymentFiles = [
                 {
                     'fileVersion': '1',
                     'fileLocation': {
-                        'stream': {
+                        'stream':{
                             'streamId': streamId,
                             'fileId': 0
                         },

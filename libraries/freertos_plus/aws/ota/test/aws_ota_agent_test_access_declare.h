@@ -1,6 +1,6 @@
 /*
- * FreeRTOS OTA V1.2.0
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS OTA V1.0.4
+ * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -33,25 +33,22 @@
 #ifndef _AWS_OTA_AGENT_TEST_ACCESS_DECLARE_H_
 #define _AWS_OTA_AGENT_TEST_ACCESS_DECLARE_H_
 
-#include "aws_iot_ota_types.h"
+#include "aws_ota_types.h"
 #include "aws_iot_ota_agent.h"
-#include "aws_iot_ota_agent_internal.h"
+#include "aws_ota_agent_internal.h"
 
 IngestResult_t TEST_OTA_prvIngestDataBlock( OTA_FileContext_t * C,
-                                            uint8_t * pcRawMsg,
+                                            const char * pacRawMsg,
                                             u32 iMsgSize,
                                             OTA_Err_t * pxCloseResult );
 
 OTA_FileContext_t * TEST_OTA_prvParseJobDoc( const char * pacRawMsg,
-                                             u32 iMsgLen,
-                                             bool_t * pbUpdateJob );
+                                             u32 iMsgLen );
 
 bool_t TEST_OTA_prvOTA_Close( OTA_FileContext_t * const C );
 
 DocParseErr_t TEST_OTA_prvParseJSONbyModel( const char * pcJSON,
                                             uint32_t ulMsgLen,
                                             JSON_DocModel_t * pxDocModel );
-
-void TEST_OTA_prvSetDataInterfaceMQTT();
 
 #endif /* ifndef _AWS_OTA_AGENT_TEST_ACCESS_DECLARE_H_ */

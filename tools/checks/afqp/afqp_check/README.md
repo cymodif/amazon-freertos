@@ -1,10 +1,10 @@
-### Device Qualification Program for FreeRTOS Check
+### Amazon FreeRTOS Qualifcation Program (AFQP) Check
 
 #### Dependencies
 * Python 2.7+ or Python 3+
 
 #### Usage
-The default FreeRTOS source root is relative to tools/checks/afqp/afqp_check. This can be changed with the --root option.
+The default Amazon FreeRTOS source root is relative to tools/checks/afqp/afqp_check. This can be changed with the --root option.
 * **Non-eclipse based IDE projects.**
     ```
     cd <AFR_ROOT>/tools/checks/afqp/afqp_check
@@ -29,8 +29,8 @@ The default FreeRTOS source root is relative to tools/checks/afqp/afqp_check. Th
 * Check for build artifiacts.
     * Return *error* if present.
 * Check for vendor license in AFQP files.
-    * Return *warning* if the FreeRTOS license is in ported code.
-    * Return *error* for each missing FreeRTOS copyright.
+    * Return *warning* if the Amazon FreeRTOS license is in ported code.
+    * Return *error* for each missing Amazon FreeRTOS copyright.
     * Return *error* for incorrect copyright year.
     * Return *error* for incorrect versions on ported files.
 * Check for a compliant Eclipse project.

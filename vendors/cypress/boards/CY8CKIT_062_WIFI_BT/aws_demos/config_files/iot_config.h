@@ -25,12 +25,6 @@
 #define IOT_CONFIG_H_
 
 #include <stdbool.h>
-#include <stdint.h>
-#include "types/iot_network_types.h"
-#include "aws_iot_network_config.h"
-
-/* Check if BLE is among the enabled networks. */
-#define BLE_ENABLED                             ( ( configENABLED_NETWORKS & AWSIOT_NETWORK_TYPE_BLE ) == AWSIOT_NETWORK_TYPE_BLE )
 
 /* How long the MQTT library will wait for PINGRESPs or PUBACKs. */
 #define IOT_MQTT_RESPONSE_WAIT_MS               ( 10000 )
@@ -77,11 +71,8 @@
 
 /* Provide a function to retrieve the serializer function pointers in the MQTT demo. */
 typedef struct IotMqttSerializer IotMqttSerializer_t;
-
-#if defined (MQTT_DEMO_TYPE_ENABLED)
-    extern const IotMqttSerializer_t * demoGetMqttSerializer( void );
-    #define IOT_DEMO_MQTT_SERIALIZER                demoGetMqttSerializer()
-#endif
+extern const IotMqttSerializer_t * demoGetMqttSerializer( void );
+#define IOT_DEMO_MQTT_SERIALIZER                demoGetMqttSerializer()
 
 /* Include the common configuration file for FreeRTOS. */
 #include "iot_config_common.h"

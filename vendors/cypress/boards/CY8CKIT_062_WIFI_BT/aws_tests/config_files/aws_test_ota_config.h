@@ -35,7 +35,7 @@
  * If applicable, the device must be pre-provisioned with this certificate. Please see
  * test/common/ota/test_files for the set of certificates.
  */
-#define otatestpalCERTIFICATE_FILE    "ecdsa-sha256-signer.crt.pem"
+#define otatestpalCERTIFICATE_FILE    "ecdsa-sha256-signer.crt.pem" /* FIX ME. */
 
  /**
  * @brief Some boards have a hard-coded name for the firmware image to boot.
@@ -43,43 +43,37 @@
 #define otatestpalFIRMWARE_FILE  "dummy.bin"
 
 /**
- * @brief Some boards OTA PAL layers will use the file names passed into it for the
+ * @brief Some boards OTA PAL layers will use the file names passed into it for the 
  * image and the certificates because their non-volatile memory is abstracted by a
  * file system. Set this to 1 if that is the case for your device.
  */
-#define otatestpalUSE_FILE_SYSTEM                           0
+#define otatestpalUSE_FILE_SYSTEM     1 /* FIX ME. */
 
 /**
  * @brief 1 if prvPAL_CheckFileSignature is implemented in aws_ota_pal.c.
  */
-#define otatestpalCHECK_FILE_SIGNATURE_SUPPORTED           0
+#define otatestpalCHECK_FILE_SIGNATURE_SUPPORTED           1   /* FIX ME. */
 
 /**
  * @brief 1 if prvPAL_ReadAndAssumeCertificate is implemented in the aws_ota_pal.c.
  */
-#define otatestpalREAD_AND_ASSUME_CERTIFICATE_SUPPORTED     1
+#define otatestpalREAD_AND_ASSUME_CERTIFICATE_SUPPORTED    1   /* FIX ME. */
 
 /**
  * @brief 1 if using PKCS #11 to access the code sign certificate from NVM.
  */
-#define otatestpalREAD_CERTIFICATE_FROM_NVM_WITH_PKCS11     1
+#define otatestpalREAD_CERTIFICATE_FROM_NVM_WITH_PKCS11    1   /* FIX ME. */
 
 /**
  * @brief Include of signature testing data applicable to this device.
  */
-#include "aws_test_ota_pal_ecdsa_sha256_signature.h"
+#include "aws_test_ota_pal_ecdsa_sha256_signature.h" /* FIX ME. */
 
 /**
  * @brief Define a valid and invalid signature verification method for this
  * platform (Windows). These are used for generating test JSON docs.
  */
-#define otatestINVALID_SIG_METHOD                         "sig-sha256-rsa"
-#define otatestVALID_SIG_METHOD                       "sig-sha256-ecdsa"
-
-/**
- * @brief Allow OTA Testing to access the static functions in aws_ota_pal.c
- * In order to carry out unit testing.
- */
-#define AMAZON_FREERTOS_ENABLE_UNIT_TESTS                   1
+#define otatestVALID_SIG_METHOD                         "sig-sha256-rsa"    /* FIX ME. */
+#define otatestINVALID_SIG_METHOD                       "sig-sha256-ecdsa"  /* FIX ME. */
 
 #endif /* ifndef _AWS_TEST_OTA_CONFIG_H_ */

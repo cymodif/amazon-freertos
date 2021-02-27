@@ -1,6 +1,6 @@
 /*
- * FreeRTOS BLE V2.1.0
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS BLE V2.0.0
+ * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -75,13 +75,7 @@ static bool bleInit()
 
     if( bleInitialized && !iotBleInitialized )
     {
-        if( IotBle_Init() == eBTStatusSuccess )
-        {
-            if( IotBle_On() == eBTStatusSuccess )
-            {
-                iotBleInitialized = true;
-            }
-        }
+        iotBleInitialized = ( eBTStatusSuccess == IotBle_Init() );
     }
 
     return iotBleInitialized;
@@ -109,7 +103,6 @@ TEST_TEAR_DOWN( Full_WiFi_Provisioning )
     {
         IotBleWifiProv_Deinit();
         prvRemoveSavedNetworks();
-        iotBleWifiProvisioningInitialized = false;
     }
 }
 

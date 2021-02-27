@@ -33,18 +33,17 @@
 
 NAME := WWD_LwIP_Interface_$(RTOS)
 
-export VENDOR_PATH := ../../../../../
+GLOBAL_INCLUDES := .
 
-GLOBAL_INCLUDES += $(VENDOR_PATH)lwip/include
-
-$(NAME)_SOURCES := $(VENDOR_PATH)lwip/src/wwd_buffer.c \
-                   $(VENDOR_PATH)lwip/src/wwd_network.c \
-                   $(VENDOR_PATH)lwip/src/netif/ethernetif.c
+export AFR_THIRDPARTY_PATH := ../../../../../../../libraries/3rdparty/
+$(NAME)_SOURCES := $(AFR_THIRDPARTY_PATH)lwip/src/portable/cypress/$(PLATFORM)/wwd_buffer.c \
+                   $(AFR_THIRDPARTY_PATH)lwip/src/portable/cypress/$(PLATFORM)/wwd_network.c \
+                   $(AFR_THIRDPARTY_PATH)lwip/src/portable/cypress/$(PLATFORM)/netif/ethernetif.c
 
 $(NAME)_COMPONENTS := WICED/network/LwIP/WWD/$(RTOS)
 
 $(NAME)_CFLAGS  = $(COMPILER_SPECIFIC_PEDANTIC_CFLAGS)
 
 $(NAME)_CHECK_HEADERS := \
-                         $(VENDOR_PATH)lwip/include/wwd_buffer.h \
-                         $(VENDOR_PATH)lwip/include/ethernetif.h
+                         $(AFR_THIRDPARTY_PATH)lwip/src/portable/cypress/$(PLATFORM)/include/wwd_buffer.h \
+                         $(AFR_THIRDPARTY_PATH)lwip/src/portable/cypress/$(PLATFORM)/include/ethernetif.h

@@ -1,6 +1,6 @@
 /*
- * FreeRTOS Platform V1.1.2
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS Platform V1.1.0
+ * Copyright (C) 2019 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -26,7 +26,7 @@
 /**
  * @file iot_network_freertos.h
  * @brief Declares the network stack functions specified in aws_iot_network.h for
- * FreeRTOS Secure Sockets.
+ * Amazon FreeRTOS Secure Sockets.
  */
 
 #ifndef _IOT_NETWORK_AFR_H_
@@ -38,7 +38,7 @@
 /* Platform network include. */
 #include "platform/iot_network.h"
 
-/* FreeRTOS Secure Sockets include. */
+/* Amazon FreeRTOS Secure Sockets include. */
 #include "iot_secure_sockets.h"
 
 /* Credentials include. */
@@ -46,7 +46,7 @@
 #include "aws_clientcredential_keys.h"
 
 /**
- * @brief Represents a network connection that uses FreeRTOS Secure Sockets.
+ * @brief Represents a network connection that uses Amazon FreeRTOS Secure Sockets.
  *
  * This is an incomplete type. In application code, only pointers to this type
  * should be used.
@@ -120,7 +120,7 @@ typedef struct _networkConnection IotNetworkConnectionAfr_t;
 #define IOT_NETWORK_INTERFACE_AFR    ( &( IotNetworkAfr ) )
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::create for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::create for Amazon FreeRTOS
  * Secure Sockets.
  */
 IotNetworkError_t IotNetworkAfr_Create( void * pConnectionInfo,
@@ -129,14 +129,14 @@ IotNetworkError_t IotNetworkAfr_Create( void * pConnectionInfo,
 
 /**
  * @brief An implementation of #IotNetworkInterface_t::setReceiveCallback for
- * FreeRTOS Secure Sockets.
+ * Amazon FreeRTOS Secure Sockets.
  */
 IotNetworkError_t IotNetworkAfr_SetReceiveCallback( void * pConnection,
                                                     IotNetworkReceiveCallback_t receiveCallback,
                                                     void * pContext );
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::send for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::send for Amazon FreeRTOS
  * Secure Sockets.
  */
 size_t IotNetworkAfr_Send( void * pConnection,
@@ -144,7 +144,7 @@ size_t IotNetworkAfr_Send( void * pConnection,
                            size_t messageLength );
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::receive for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::receive for Amazon FreeRTOS
  * Secure Sockets.
  */
 size_t IotNetworkAfr_Receive( void * pConnection,
@@ -152,7 +152,7 @@ size_t IotNetworkAfr_Receive( void * pConnection,
                               size_t bytesRequested );
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::receiveUpto for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::receiveUpto for Amazon FreeRTOS
  * Secure Sockets.
  */
 size_t IotNetworkAfr_ReceiveUpto( void * pConnection,
@@ -160,13 +160,13 @@ size_t IotNetworkAfr_ReceiveUpto( void * pConnection,
                                   size_t bufferSize );
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::close for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::close for Amazon FreeRTOS
  * Secure Sockets.
  */
 IotNetworkError_t IotNetworkAfr_Close( void * pConnection );
 
 /**
- * @brief An implementation of #IotNetworkInterface_t::destroy for FreeRTOS
+ * @brief An implementation of #IotNetworkInterface_t::destroy for Amazon FreeRTOS
  * Secure Sockets.
  */
 IotNetworkError_t IotNetworkAfr_Destroy( void * pConnection );

@@ -1,6 +1,6 @@
 /*
- * FreeRTOS V202007.00
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS V201910.00
+ * Copyright (C) 2019 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -46,7 +46,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include "semphr.h"
 
 /* TCP/IP abstraction includes. */
 #include "iot_secure_sockets.h"
@@ -154,10 +153,6 @@ static char cTxBuffers[ echoNUM_ECHO_CLIENTS ][ echoBUFFER_SIZES ],
 
 /*-----------------------------------------------------------*/
 
-/* Create a semaphore to sync all Echo task(s). */
-static SemaphoreHandle_t EchoSingleSemaphore;
-
-
 int vStartTCPEchoClientTasks_SingleTasks( bool awsIotMqttMode,
                                           const char * pIdentifier,
                                           void * pNetworkServerInfo,
@@ -165,7 +160,6 @@ int vStartTCPEchoClientTasks_SingleTasks( bool awsIotMqttMode,
                                           const IotNetworkInterface_t * pNetworkInterface )
 {
     BaseType_t xX;
-    BaseType_t TaskCompleteCounter;
     char cNameBuffer[ echoMAX_TASK_NAME_LENGTH ];
 
     /* Unused parameters */
@@ -174,9 +168,6 @@ int vStartTCPEchoClientTasks_SingleTasks( bool awsIotMqttMode,
     ( void ) pNetworkServerInfo;
     ( void ) pNetworkCredentialInfo;
     ( void ) pNetworkInterface;
-
-    TaskCompleteCounter = 0;
-    EchoSingleSemaphore = xSemaphoreCreateCounting( echoNUM_ECHO_CLIENTS, 0 );
 
     /* Create the echo client tasks. */
     for( xX = 0; xX < echoNUM_ECHO_CLIENTS; xX++ )
@@ -190,18 +181,7 @@ int vStartTCPEchoClientTasks_SingleTasks( bool awsIotMqttMode,
                      NULL );                   /* The task handle is not used. */
     }
 
-    /* Wait for all tasks to finish. */
-    while( TaskCompleteCounter < echoNUM_ECHO_CLIENTS )
-    {
-        /* Wait for the semaphore to be 'given' by a child task. */
-        xSemaphoreTake( EchoSingleSemaphore, portMAX_DELAY );
-
-        /* Increment the task completion counter variable. */
-        TaskCompleteCounter++;
-    }
-
-    /* Return Success. */
-    return EXIT_SUCCESS;
+    return 0;
 }
 /*-----------------------------------------------------------*/
 
@@ -217,8 +197,6 @@ static void prvEchoClientTask( void * pvParameters )
     char * pcTransmittedString;
     char * pcReceivedString;
     TickType_t xTimeOnEntering;
-    BaseType_t lConnectionCount;
-    const BaseType_t lMaxConnectionCount = 10;
 
     #if ( ipconfigUSE_TCP_WIN == 1 )
         WinProperties_t xWinProps;
@@ -252,8 +230,7 @@ static void prvEchoClientTask( void * pvParameters )
                                                             configECHO_SERVER_ADDR2,
                                                             configECHO_SERVER_ADDR3 );
 
-    /* Create lMaxConnectionCount distinct connections to the echo server. */
-    for( lConnectionCount = 0; lConnectionCount < lMaxConnectionCount; lConnectionCount++ )
+    for( ; ; )
     {
         /* Create a TCP socket. */
         xSocket = SOCKETS_Socket( SOCKETS_AF_INET, SOCKETS_SOCK_STREAM, SOCKETS_IPPROTO_TCP );
@@ -425,12 +402,6 @@ static void prvEchoClientTask( void * pvParameters )
          * congested. */
         vTaskDelay( echoLOOP_DELAY );
     }
-
-    /* Notify the parent task about completion. */
-    xSemaphoreGive( EchoSingleSemaphore );
-
-    /* Delete self. */
-    vTaskDelete( NULL );
 }
 /*-----------------------------------------------------------*/
 

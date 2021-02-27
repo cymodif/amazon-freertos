@@ -31,10 +31,6 @@
 /* FreeRTOS includes. */
 #include "FreeRTOS.h"
 #include "task.h"
-#ifdef CY_BOOT_USE_EXTERNAL_FLASH
-#include "flash_qspi.h"
-#include "cy_smif_psoc6.h"
-#endif
 
 #ifdef CY_USE_LWIP
 #include "lwip/tcpip.h"
@@ -55,22 +51,12 @@
 #include "cybsp.h"
 #include "cy_retarget_io.h"
 
-#ifdef CY_TFM_PSA_SUPPORTED
-#include "tfm_multi_core_api.h"
-#include "tfm_ns_interface.h"
-#include "tfm_ns_mailbox.h"
-#if ( testrunnerFULL_TFM_ENABLED == 1 )
-#include "test_framework_integ_test.h"
-#include "tfm_secure_client_service_api.h"
-#endif
-#endif
-
 #if (BLE_SUPPORTED == 1)
 #include "bt_hal_manager_types.h"
 #endif
 
 /* Logging Task Defines. */
-#define mainLOGGING_MESSAGE_QUEUE_LENGTH    ( 90 )
+#define mainLOGGING_MESSAGE_QUEUE_LENGTH    ( 15 )
 #define mainLOGGING_TASK_STACK_SIZE         ( configMINIMAL_STACK_SIZE * 8 )
 
 /* Unit test defines. */
@@ -79,18 +65,15 @@
 #if (testrunnerFULL_BLE_ENABLED == 1)
 #define mainTEST_RUNNER_TASK_PRIORITY     ( tskIDLE_PRIORITY + 6 )
 #else
-#define mainTEST_RUNNER_TASK_PRIORITY     ( 2 )
+#define mainTEST_RUNNER_TASK_PRIORITY     ( tskIDLE_PRIORITY )
 #endif
-
-/* Unity includes for testing. */
-#include "unity_internals.h"
 
 /* The task delay for allowing the lower priority logging task to print out Wi-Fi
  * failure status before blocking indefinitely. */
 #define mainLOGGING_WIFI_STATUS_DELAY       pdMS_TO_TICKS( 1000 )
 
 /* The name of the devices for xApplicationDNSQueryHook. */
-#define mainDEVICE_NICK_NAME				"cypress_tests" /* FIX ME.*/
+#define mainDEVICE_NICK_NAME				"vendor_demo" /* FIX ME.*/
 
 #ifdef CY_USE_FREERTOS_TCP
 /* Static arrays for FreeRTOS-Plus-TCP stack initialization for Ethernet network
@@ -147,13 +130,6 @@ static const uint8_t ucDNSServerAddress[ 4 ] =
 };
 #endif /* CY_USE_FREERTOS_TCP */
 
-#if ( defined(CY_TFM_PSA_SUPPORTED) && (testrunnerFULL_TFM_ENABLED == 1) )
-void tfm_test_task( void * arg );
-void test_crypto_random(void);
-#endif
-
-TaskHandle_t xRunTestTaskHandle = NULL;
-
 /**
  * @brief Application task startup hook for applications using Wi-Fi. If you are not
  * using Wi-Fi, then start network dependent applications in the vApplicationIPNetorkEventHook
@@ -180,30 +156,6 @@ static void prvWifiConnect( void );
  */
 static void prvMiscInitialization( void );
 
-#ifdef CY_TFM_PSA_SUPPORTED
-static struct ns_mailbox_queue_t ns_mailbox_queue;
-
-static void tfm_ns_multi_core_boot(void)
-{
-    int32_t ret;
-    if (tfm_ns_wait_for_s_cpu_ready()) {
-        /* Error sync'ing with secure core */
-        /* Avoid undefined behavior after multi-core sync-up failed */
-        for (;;) {
-        }
-    }
-
-    ret = tfm_ns_mailbox_init(&ns_mailbox_queue);
-    if (ret != MAILBOX_SUCCESS) {
-        /* Non-secure mailbox initialization failed. */
-        /* Avoid undefined behavior after NS mailbox initialization failed */
-        for (;;) {
-        }
-    }
-}
-#endif
-
-
 /*-----------------------------------------------------------*/
 
 /**
@@ -213,51 +165,27 @@ int main( void )
 {
     /* Perform any hardware initialization that does not require the RTOS to be
      * running.  */
-    BaseType_t xReturnMessage;
-
     prvMiscInitialization();
 
-#ifdef CY_TFM_PSA_SUPPORTED
-    tfm_ns_multi_core_boot();
-#endif
-
     /* Create tasks that are not dependent on the Wi-Fi being initialized. */
-    xReturnMessage = xLoggingTaskInitialize( mainLOGGING_TASK_STACK_SIZE,
-                                             tskIDLE_PRIORITY,
-                                             mainLOGGING_MESSAGE_QUEUE_LENGTH );
-
-#ifdef CY_TFM_PSA_SUPPORTED
-    /* Initialize TFM interface */
-    tfm_ns_interface_init();
-#endif
+    xLoggingTaskInitialize( mainLOGGING_TASK_STACK_SIZE,
+                            tskIDLE_PRIORITY,
+                            mainLOGGING_MESSAGE_QUEUE_LENGTH );
 
 #ifdef CY_USE_FREERTOS_TCP
-    if (pdPASS == xReturnMessage)
-    {
-        xReturnMessage = FreeRTOS_IPInit( ucIPAddress,
-                                          ucNetMask,
-                                          ucGatewayAddress,
-                                          ucDNSServerAddress,
-                                          ucMACAddress );
-    }
+    FreeRTOS_IPInit( ucIPAddress,
+                     ucNetMask,
+                     ucGatewayAddress,
+                     ucDNSServerAddress,
+                     ucMACAddress );
 #endif /* CY_USE_FREERTOS_TCP */
 
     /* Start the scheduler.  Initialization that requires the OS to be running,
      * including the Wi-Fi initialization, is performed in the RTOS daemon task
      * startup hook. */
-    if (pdPASS == xReturnMessage)
-    {
-        vTaskStartScheduler();
-    }
+    vTaskStartScheduler();
 
-    if (pdPASS == xReturnMessage)
-    {
-        return 0;
-    }
-    else
-    {
-        return 1;
-    }
+    return 0;
 }
 
 #if (BLE_SUPPORTED == 1)
@@ -271,38 +199,29 @@ BTStatus_t bleStackInit( void )
 static void prvMiscInitialization( void )
 {
     cy_rslt_t result = cybsp_init();
-    CY_ASSERT(CY_RSLT_SUCCESS == result);
+    if (result != CY_RSLT_SUCCESS)
+    {
+        configPRINTF( (  "BSP initialization failed \r\n" ) );
+    }
+    result = cy_retarget_io_init(CYBSP_DEBUG_UART_TX, CYBSP_DEBUG_UART_RX, CY_RETARGET_IO_BAUDRATE);
+    if (result != CY_RSLT_SUCCESS)
+    {
+        configPRINTF( ( "Retarget IO initializatoin failed \r\n" ) );
+    }
 }
 /*-----------------------------------------------------------*/
 
 void vApplicationDaemonTaskStartupHook( void )
 {
-    cy_rslt_t result = cy_retarget_io_init(CYBSP_DEBUG_UART_TX, CYBSP_DEBUG_UART_RX, CY_RETARGET_IO_BAUDRATE);
-    if (result != CY_RSLT_SUCCESS)
-    {
-        printf( "Retarget IO initialization failed \r\n" );
-    }
+    /* FIX ME: Perform any hardware initialization, that require the RTOS to be
+     * running, here. */
 
-#ifdef CY_BOOT_USE_EXTERNAL_FLASH
-#ifdef PDL_CODE
-    if (qspi_init_sfdp(1) < 0)
-    {
-        printf("QSPI Init failed\r\n");
-        while (1);
-    }
-#else   /* PDL_CODE */
-    if (psoc6_qspi_init() != 0)
-    {
-       printf("psoc6_qspi_init() FAILED!!\r\n");
-    }
-
-#endif /* PDL_CODE */
-#endif /* CY_BOOT_USE_EXTERNAL_FLASH */
 
     /* FIX ME: If your MCU is using Wi-Fi, delete surrounding compiler directives to
      * enable the unit tests and after MQTT, Bufferpool, and Secure Sockets libraries
      * have been imported into the project. If you are not using Wi-Fi, see the
      * vApplicationIPNetworkEventHook function. */
+
     if( SYSTEM_Init() == pdPASS )
     {
 
@@ -313,37 +232,49 @@ void vApplicationDaemonTaskStartupHook( void )
         tcpip_init(NULL, NULL);
 #endif
 
-#if ( defined(CY_TFM_PSA_SUPPORTED) && (testrunnerFULL_TFM_ENABLED == 1) )
-        /* Create the task to run TFM tests. */
-        xTaskCreate( tfm_test_task,
-                        "RunTests_task",
-                        mainTEST_RUNNER_TASK_STACK_SIZE,
-                        NULL,
-                        mainTEST_RUNNER_TASK_PRIORITY,
-                        &xRunTestTaskHandle );
-#else /* #if ( defined(CY_TFM_PSA_SUPPORTED) && (testrunnerFULL_TFM_ENABLED == 1) ) */
         /* Connect to the Wi-Fi before running the tests. */
         prvWifiConnect();
 
-        /* Provision the device with AWS certificate and private key.
-         * In some test groups such as FullWiFi and PKCS related groups the device certificate is
-         * not set and hence the provisioning is expected to fail. Hence we do not check the return
-         * code for this function call.
-         */
+        /* Provision the device with AWS certificate and private key. */
         vDevModeKeyProvisioning();
 
         /* Create the task to run unit tests. */
         xTaskCreate( TEST_RUNNER_RunTests_task,
-                    "RunTests_task",
-                    mainTEST_RUNNER_TASK_STACK_SIZE,
-                    NULL,
-                    mainTEST_RUNNER_TASK_PRIORITY,
-                    &xRunTestTaskHandle );
-
-#endif /* #if ( defined(CY_TFM_PSA_SUPPORTED) && (testrunnerFULL_TFM_ENABLED == 1) ) */
+                        "RunTests_task",
+                        mainTEST_RUNNER_TASK_STACK_SIZE,
+                        NULL,
+                        mainTEST_RUNNER_TASK_PRIORITY,
+                        NULL );
     }
 }
+/*-----------------------------------------------------------*/
 
+// void vApplicationIPNetworkEventHook( eIPCallbackEvent_t eNetworkEvent )
+// {
+//     /* FIX ME: If your application is using Ethernet network connections and the
+//      * FreeRTOS+TCP stack, delete the surrounding compiler directives to enable the
+//      * unit tests and after MQTT, Bufferpool, and Secure Sockets libraries have been
+//      * imported into the project. If you are not using Ethernet see the
+//      * vApplicationDaemonTaskStartupHook function. */
+//     #if 0
+//     static BaseType_t xTasksAlreadyCreated = pdFALSE;
+
+//     /* If the network has just come up...*/
+//     if( eNetworkEvent == eNetworkUp )
+//     {
+//         if( ( xTasksAlreadyCreated == pdFALSE ) && ( SYSTEM_Init() == pdPASS ) )
+//         {
+//             xTaskCreate( TEST_RUNNER_RunTests_task,
+//                          "TestRunner",
+//                          TEST_RUNNER_TASK_STACK_SIZE,
+//                          NULL,
+//                          tskIDLE_PRIORITY, NULL );
+
+//             xTasksAlreadyCreated = pdTRUE;
+//         }
+//     }
+//     #endif /* if 0 */
+// }
 /*-----------------------------------------------------------*/
 
 void prvWifiConnect( void )
@@ -357,7 +288,7 @@ void prvWifiConnect( void )
 
     if( xWifiStatus == eWiFiSuccess )
     {
-        configPRINTF( ( "Wi-Fi module initialized. Connecting to AP %s...\r\n", clientcredentialWIFI_SSID ) );
+        configPRINTF( ( "Wi-Fi module initialized. Connecting to AP...\r\n" ) );
     }
     else
     {
@@ -406,6 +337,108 @@ void prvWifiConnect( void )
         }
     }
 }
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief This is to provide memory that is used by the Idle task.
+ *
+ * If configUSE_STATIC_ALLOCATION is set to 1, then the application must provide an
+ * implementation of vApplicationGetIdleTaskMemory() in order to provide memory to
+ * the Idle task.
+ */
+// void vApplicationGetIdleTaskMemory( StaticTask_t ** ppxIdleTaskTCBBuffer,
+//                                     StackType_t ** ppxIdleTaskStackBuffer,
+//                                     uint32_t * pulIdleTaskStackSize )
+// {
+//     /* If the buffers to be provided to the Idle task are declared inside this
+//      * function then they must be declared static - otherwise they will be allocated on
+//      * the stack and so not exists after this function exits. */
+//     static StaticTask_t xIdleTaskTCB;
+//     static StackType_t uxIdleTaskStack[ configMINIMAL_STACK_SIZE ];
+
+//     /* Pass out a pointer to the StaticTask_t structure in which the Idle
+//      * task's state will be stored. */
+//     *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
+
+//     /* Pass out the array that will be used as the Idle task's stack. */
+//     *ppxIdleTaskStackBuffer = uxIdleTaskStack;
+
+//     /* Pass out the size of the array pointed to by *ppxIdleTaskStackBuffer.
+//      * Note that, as the array is necessarily of type StackType_t,
+//      * configMINIMAL_STACK_SIZE is specified in words, not bytes. */
+//     *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+// }
+// /*-----------------------------------------------------------*/
+
+// /**
+//  * @brief This is to provide the memory that is used by the RTOS daemon/time task.
+//  *
+//  * If configUSE_STATIC_ALLOCATION is set to 1, then application must provide an
+//  * implementation of vApplicationGetTimerTaskMemory() in order to provide memory
+//  * to the RTOS daemon/time task.
+//  */
+// void vApplicationGetTimerTaskMemory( StaticTask_t ** ppxTimerTaskTCBBuffer,
+//                                      StackType_t ** ppxTimerTaskStackBuffer,
+//                                      uint32_t * pulTimerTaskStackSize )
+// {
+//     /* If the buffers to be provided to the Timer task are declared inside this
+//      * function then they must be declared static - otherwise they will be allocated on
+//      * the stack and so not exists after this function exits. */
+//     static StaticTask_t xTimerTaskTCB;
+//     static StackType_t uxTimerTaskStack[ configTIMER_TASK_STACK_DEPTH ];
+
+//     /* Pass out a pointer to the StaticTask_t structure in which the Idle
+//      * task's state will be stored. */
+//     *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
+
+//     /* Pass out the array that will be used as the Timer task's stack. */
+//     *ppxTimerTaskStackBuffer = uxTimerTaskStack;
+
+//     /* Pass out the size of the array pointed to by *ppxTimerTaskStackBuffer.
+//      * Note that, as the array is necessarily of type StackType_t,
+//      * configMINIMAL_STACK_SIZE is specified in words, not bytes. */
+//     *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+// }
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Warn user if pvPortMalloc fails.
+ *
+ * Called if a call to pvPortMalloc() fails because there is insufficient
+ * free memory available in the FreeRTOS heap.  pvPortMalloc() is called
+ * internally by FreeRTOS API functions that create tasks, queues, software
+ * timers, and semaphores.  The size of the FreeRTOS heap is set by the
+ * configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h.
+ *
+ */
+// void vApplicationMallocFailedHook()
+// {
+//     /* The TCP tests will test behavior when the entire heap is allocated. In
+//      * order to avoid interfering with those tests, this function does nothing. */
+// }
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Loop forever if stack overflow is detected.
+ *
+ * If configCHECK_FOR_STACK_OVERFLOW is set to 1,
+ * this hook provides a location for applications to
+ * define a response to a stack overflow.
+ *
+ * Use this hook to help identify that a stack overflow
+ * has occurred.
+ *
+ */
+// void vApplicationStackOverflowHook( TaskHandle_t xTask,
+//                                     char * pcTaskName )
+// {
+//     portDISABLE_INTERRUPTS();
+
+//     /* Loop forever */
+//     for( ; ; )
+//     {
+//     }
+// }
 /*-----------------------------------------------------------*/
 
 /**
@@ -468,44 +501,31 @@ void vApplicationIdleHook( void )
  * See FreeRTOSConfig.h to define configASSERT to something different.
  */
 void vAssertCalled(const char * pcFile,
-    uint32_t ulLine)
+	uint32_t ulLine)
 {
-    /* When called from the context of the test thread the configASSERT macro is
-    * expected to call TEST_ABORT particularly to handle negative test cases.
-    * The implementation of TEST_ABORT by default calls the longjmp instruction which
-    * is not safe to be called from any other thread other than the thread that runs
-    * test. If called from another thread the longjmp instruction messes with the
-    * stack pointer causing stack corruption and hence crashes in unpredictable ways.
-    * Hence we only call TEST_ABORT when on the test thread otherwise just assert as
-    * we normally would.
-    */
-    if (xTaskGetCurrentTaskHandle() == xRunTestTaskHandle)
-    {
-        TEST_ABORT();
-    }
-    else
-    {
-        const uint32_t ulLongSleep = 1000UL;
-        volatile uint32_t ulBlockVariable = 0UL;
-        volatile char * pcFileName = (volatile char *)pcFile;
-        volatile uint32_t ulLineNumber = ulLine;
+    /* FIX ME. If necessary, update to applicable assertion routine actions. */
 
-        (void)pcFileName;
-        (void)ulLineNumber;
+	const uint32_t ulLongSleep = 1000UL;
+	volatile uint32_t ulBlockVariable = 0UL;
+	volatile char * pcFileName = (volatile char *)pcFile;
+	volatile uint32_t ulLineNumber = ulLine;
 
-        configPRINTF( ("vAssertCalled %s, %ld\n", pcFile, (long)ulLine) );
+	(void)pcFileName;
+	(void)ulLineNumber;
 
-        /* Setting ulBlockVariable to a non-zero value in the debugger will allow
-        * this function to be exited. */
-        taskDISABLE_INTERRUPTS();
-        {
-            while (ulBlockVariable == 0UL)
-            {
-                vTaskDelay( pdMS_TO_TICKS( ulLongSleep ) );
-            }
-        }
-        taskENABLE_INTERRUPTS();
-    }
+	printf("vAssertCalled %s, %ld\n", pcFile, (long)ulLine);
+	fflush(stdout);
+
+	/* Setting ulBlockVariable to a non-zero value in the debugger will allow
+	* this function to be exited. */
+	taskDISABLE_INTERRUPTS();
+	{
+		while (ulBlockVariable == 0UL)
+		{
+			vTaskDelay( pdMS_TO_TICKS( ulLongSleep ) );
+		}
+	}
+	taskENABLE_INTERRUPTS();
 }
 /*-----------------------------------------------------------*/
 
@@ -523,86 +543,3 @@ void vAssertCalled(const char * pcFile,
     }
 
 #endif
-
-#if ( defined(CY_TFM_PSA_SUPPORTED) && (testrunnerFULL_TFM_ENABLED == 1) )
-void test_crypto_random(void)
-{
-    static const unsigned char trail[] = "don't overwrite me";
-    unsigned char changed[256] = { 0 };
-    unsigned char output[sizeof(changed) + sizeof(trail)];
-    size_t i, bytes = sizeof(changed);
-    unsigned int run;
-    int ret;
-
-    printf("\r\n*** Execute CRYPTO RANDOM TEST ***\r\n");
-    memcpy(output + bytes, trail, sizeof(trail));
-    /* Run several times, to ensure that every output byte will be
-     * nonzero at least once with overwhelming probability
-     * (2^(-8*number_of_runs)). */
-    for (run = 0; run < 10; run++) {
-        memset(output, 0, bytes);
-        ret = psa_generate_random(output, bytes);
-        if ( PSA_SUCCESS != ret ) {
-            printf(" !!! CRYPTO RANDOM TEST FAILED as psa_generate_random() returns error(%x) !!!\r\n", ret);
-            return;
-        }
-
-        /* Check that no more than 'bytes' have been overwritten */
-        for (i = 0; i < sizeof(trail); i++) {
-            if (output[bytes + i] != trail[i]) {
-                printf(" !!! CRYPTO RANDOM TEST FAILED as psa_generate_random() overwriting the buffer !!!\r\n");
-                return;
-            }
-        }
-
-        for (i = 0; i < bytes; i++) {
-            if (0 != output[i]) {
-                ++changed[i];
-            }
-        }
-    }
-
-    /* Check that every byte was changed to nonzero at least once. This
-     * validates that psa_generate_random is overwriting every byte of
-     * the output buffer. */
-    for (i = 0; i < bytes; i++) {
-        if (0 == changed[i]) {
-            printf(" !!! CRYPTO RANDOM TEST FAILED as one of byte is zero !!!\r\n");
-            return;
-        }
-    }
-    printf("*** CRYPTO RANDOM TEST has PASSED ***\r\n");
-}
-
-/*******************************************************************************
-* Function Name: tfm_test_task
-********************************************************************************
-* Summary:
-* This is the FreeRTOS task callback function. It does...
-*    1. TFM Regression test
-*
-* Parameters:
-*  void * context passed from main function
-*
-* Return:
-*  void
-*
-*******************************************************************************/
-void tfm_test_task( void * arg )
-{
-    (void)arg;
-
-    printf(("Start TFM Regression test in AFR ...\n\n"));
-
-    tfm_secure_client_run_tests();
-
-    tfm_non_secure_client_run_tests();
-
-    printf(("===============================\n"));
-    printf(("End of TFM Regression test in AFR\n"));
-    printf(("===============================\n"));
-
-    test_crypto_random();
-}
-#endif
-

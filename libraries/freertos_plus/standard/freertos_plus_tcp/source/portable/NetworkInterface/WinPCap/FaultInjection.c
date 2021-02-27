@@ -77,8 +77,7 @@ return pxNetworkBufferIn;
 
 	if( ulCallCount > ulNextFaultCallCount )
 	{
-		xApplicationGetRandomNumber( &( ulNextFaultCallCount ) );
-		ulNextFaultCallCount = ulNextFaultCallCount % xMAX_FAULT_INJECTION_RATE;
+		ulNextFaultCallCount = ipconfigRAND32() % xMAX_FAULT_INJECTION_RATE;
 		if( ulNextFaultCallCount < xMIN_FAULT_INJECTION_RATE )
 		{
 			ulNextFaultCallCount = xMIN_FAULT_INJECTION_RATE;
@@ -86,8 +85,7 @@ return pxNetworkBufferIn;
 
 		ulCallCount = 0;
 
-		xApplicationGetRandomNumber( &( ulFault ) );
-		ulFault = ulFault % xNUM_FAULT_TYPES;
+		ulFault = ipconfigRAND32() % xNUM_FAULT_TYPES;
 
 		if( ulFaultLogIndex < xFAULT_LOG_SIZE )
 		{

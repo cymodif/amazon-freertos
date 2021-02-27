@@ -72,7 +72,7 @@ MEMORY
      * Your changes must be aligned with the corresponding memory regions for CM0+ core in 'xx_cm0plus.ld',
      * where 'xx' is the device group; for example, 'cy8c6xx7_cm0plus.ld'.
      */
-    ram               (rwx)   : ORIGIN = 0x08020000, LENGTH = 0xDF800
+    ram               (rwx)   : ORIGIN = 0x08002000, LENGTH = 0xFD800
     flash             (rx)    : ORIGIN = 0x10000000 + MCUBOOT_BOOTLOADER_SIZE, LENGTH = CY_BOOT_PRIMARY_1_SIZE
 
     /* This is a 32K flash region used for EEPROM emulation. This region can also be used as the general purpose flash.
@@ -131,6 +131,16 @@ GROUP(libgcc.a libc.a libm.a libnosys.a)
 
 SECTIONS
 {
+    /* The MCU boot header */
+    .cy_mcuboot_sig ORIGIN(flash) :
+    {
+        . = ALIGN(8);
+        __cy_mcuboot_sig_start = . ;
+        KEEP(*(.cy_mcuboot_sig))
+        . = ALIGN( MCUBOOT_HEADER_SIZE );
+        __cy_mcuboot_sig_end = . ;
+    } > flash
+
     /* Cortex-M4 application flash area */
     .text ORIGIN(flash)  + MCUBOOT_HEADER_SIZE :
     {

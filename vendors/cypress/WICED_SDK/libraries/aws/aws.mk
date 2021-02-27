@@ -70,7 +70,6 @@ $(NAME)_SOURCES :=  $(AFR_FREERTOS_PLUS_AWS_PATH)greengrass/src/aws_greengrass_d
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/entropy.c                 \
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/entropy_poll.c            \
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/error.c                   \
-                    $(AFR_THIRDPARTY_PATH)mbedtls_utils/mbedtls_error.c           \
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/gcm.c                     \
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/havege.c                  \
                     $(AFR_THIRDPARTY_PATH)mbedtls/library/hmac_drbg.c               \
@@ -132,17 +131,14 @@ $(NAME)_SOURCES :=  $(AFR_FREERTOS_PLUS_AWS_PATH)greengrass/src/aws_greengrass_d
                     $(AFR_C_SDK_AWS_PATH)shadow/src/aws_iot_shadow_subscription.c                                   \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)tls/src/iot_tls.c                                                     \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)utils/src/iot_system_init.c                                           \
-                    $(AFR_FREERTOS_PLUS_STANDARD_PATH)utils/src/iot_pki_utils.c                                             \
-                    $(AFR_FREERTOS_PLUS_STANDARD_PATH)pkcs11/src/iot_pkcs11.c   \
                     $(AFR_ABSTRACTIONS_PATH)platform/freertos/iot_threads_freertos.c                                     \
                     $(AMAZON_FREERTOS_PATH)vendors/cypress/boards/$(PLATFORM)/ports/wifi/iot_wifi.c           \
                     $(AFR_ABSTRACTIONS_PATH)pkcs11/mbedtls/iot_pkcs11_mbedtls.c                              \
-                    $(AFR_THIRDPARTY_PATH)mbedtls_utils/mbedtls_utils.c                              \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)crypto/src/iot_crypto.c                                               \
                     $(AMAZON_FREERTOS_PATH)vendors/cypress/boards/$(PLATFORM)/ports/pkcs11/iot_pkcs11_pal.c   \
                     $(AMAZON_FREERTOS_PATH)vendors/cypress/boards/$(PLATFORM)/ports/pkcs11/hw_poll.c
 
-GLOBAL_INCLUDES := $(AFR_C_SDK_STANDARD_PATH)mqtt/include \
+$(NAME)_INCLUDES := $(AFR_C_SDK_STANDARD_PATH)mqtt/include \
                     $(AFR_C_SDK_STANDARD_PATH)mqtt/include/types \
                     $(AFR_C_SDK_AWS_PATH)/shadow/include \
                     $(AFR_C_SDK_AWS_PATH)/shadow/include/types \
@@ -152,16 +148,9 @@ GLOBAL_INCLUDES := $(AFR_C_SDK_STANDARD_PATH)mqtt/include \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)tls/include \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)utils/include \
                     $(AFR_FREERTOS_PLUS_STANDARD_PATH)crypto/include \
-                    $(AFR_FREERTOS_PLUS_STANDARD_PATH)pkcs11/include \
                     $(AFR_C_SDK_STANDARD_PATH)common/include \
                     $(AFR_ABSTRACTIONS_PATH)platform/include/platform \
                     $(AFR_ABSTRACTIONS_PATH)platform/freertos/include/platform \
-                    $(AFR_ABSTRACTIONS_PATH)pkcs11/include \
                     $(AFR_THIRDPARTY_PATH)jsmn \
-                    $(AFR_THIRDPARTY_PATH)mbedtls_config \
                     $(AFR_THIRDPARTY_PATH)mbedtls/include \
-                    $(AFR_THIRDPARTY_PATH)mbedtls_utlils \
                     $(AFR_THIRDPARTY_PATH)unity/src
-
-GLOBAL_DEFINES := MBEDTLS_CONFIG_FILE="<aws_mbedtls_config.h>" \
-                  CONFIG_MEDTLS_USE_AFR_MEMORY

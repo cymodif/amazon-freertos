@@ -1,6 +1,6 @@
 /*
- * FreeRTOS Defender V3.0.2
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * Amazon FreeRTOS Defender V3.0.0
+ * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -206,45 +206,24 @@ typedef struct AwsIotDefenderStartInfo
 } AwsIotDefenderStartInfo_t;
 
 /**
- * @functions_page{defender,Device Defender library}
- * - @function_name{defender_function_setmetrics}
- * @function_brief{defender_function_setmetrics}
- * - @function_name{defender_function_start}
- * @function_brief{defender_function_start}
- * - @function_name{defender_function_stop}
- * @function_brief{defender_function_stop}
- * - @function_name{defender_function_setperiod}
- * @function_brief{defender_function_setperiod}
- * - @function_name{defender_function_getperiod}
- * @function_brief{defender_function_getperiod}
- * - @function_name{defender_function_strerror}
- * @function_brief{defender_function_strerror}
- * - @function_name{defender_function_EventType}
- * @function_brief{defender_function_EventType}
+ * @functionspage{defender,Device Defender library}
+ * - @functionname{defender_function_setmetrics}
+ * - @functionname{defender_function_start}
+ * - @functionname{defender_function_stop}
+ * - @functionname{defender_function_setperiod}
+ * - @functionname{defender_function_getperiod}
+ * - @functionname{defender_function_strerror}
+ * - @functionname{defender_function_EventType}
  */
 
 /**
- * @function_page{AwsIotDefender_SetMetrics,defender,setmetrics}
- * @function_snippet{defender,setmetrics,this}
- * @copydoc AwsIotDefender_SetMetrics
- * @function_page{AwsIotDefender_Start,defender,start}
- * @function_snippet{defender,start,this}
- * @copydoc AwsIotDefender_Start
- * @function_page{AwsIotDefender_Stop,defender,stop}
- * @function_snippet{defender,stop,this}
- * @copydoc AwsIotDefender_Stop
- * @function_page{AwsIotDefender_SetPeriod,defender,setperiod}
- * @function_snippet{defender,setperiod,this}
- * @copydoc AwsIotDefender_SetPeriod
- * @function_page{AwsIotDefender_GetPeriod,defender,getperiod}
- * @function_snippet{defender,getperiod,this}
- * @copydoc AwsIotDefender_GetPeriod
- * @function_page{AwsIotDefender_strerror,defender,strerror}
- * @function_snippet{defender,strerror,this}
- * @copydoc AwsIotDefender_strerror
- * @function_page{AwsIotDefender_EventType,defender,EventType}
- * @function_snippet{defender,EventType,this}
- * @copydoc AwsIotDefender_EventType
+ * @functionpage{AwsIotDefender_SetMetrics,defender,setmetrics}
+ * @functionpage{AwsIotDefender_Start,defender,start}
+ * @functionpage{AwsIotDefender_Stop,defender,stop}
+ * @functionpage{AwsIotDefender_SetPeriod,defender,setperiod}
+ * @functionpage{AwsIotDefender_GetPeriod,defender,getperiod}
+ * @functionpage{AwsIotDefender_strerror,defender,strerror}
+ * @functionpage{AwsIotDefender_EventType,defender,EventType}
  */
 
 /**
