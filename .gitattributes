@@ -27,6 +27,8 @@
 *.tab text
 *.tsv text
 *.sql text
+*.html text
+*.css text
 
 # Graphics
 *.png binary
@@ -108,3 +110,7 @@
 make text
 makefile text
 *.mk text
+
+# Never modify line endings of bash scripts
+*.sh text eol=lf
+*.sh.example text eol=lf

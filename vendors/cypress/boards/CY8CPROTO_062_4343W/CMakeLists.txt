@@ -31,23 +31,22 @@
 #--------------------------------------------------------------------
 # Cypress Defines
 #
-include("${AFR_VENDORS_DIR}/cypress/psoc6/cmake/cy_defines.cmake")
+include("${AFR_VENDORS_DIR}/cypress/MTB/psoc6/cmake/cy_defines.cmake")
+include("${cy_psoc6_cmake_dir}/cy_create_linked_target.cmake")
+include("${cy_psoc6_cmake_dir}/cy_create_exe_target.cmake")
 
 #--------------------------------------------------------------------
 # Default linker script for this board
 #  (modified for OTA builds)
 #
-set(LINKER_SCRIPT_NAME "cy8c6xxa_cm4_dual")
+set(ENV{LINKER_SCRIPT_NAME} "cy8c6xxa_cm4_dual")
 
 #--------------------------------------------------------------------
-# Board defines
-#
-target_compile_definitions(${AFR_TARGET_APP_NAME} PUBLIC
-    "-DCOMPONENT_CAPSENSE"
-    "-DCOMPONENT_CM0P_SLEEP"
-    "-DCOMPONENT_CM4"
-    "-DCOMPONENT_SOFTFP"
-    )
+# Features
+# Enable BLE
+if (NOT DEFINED BLE_SUPPORTED)
+set(BLE_SUPPORTED               "1" )
+endif()
 
 if(OTA_SUPPORT)
     #--------------------------------------------------------------------
@@ -63,30 +62,41 @@ if(OTA_SUPPORT)
     #   CY_BOOT_SCRATCH_SIZE
     #   MCUBOOT_MAX_IMG_SECTORS
     #
-    set(MCUBOOT_HEADER_SIZE         "0x400"      )       # Must be a multiple of 1024
-    set(MCUBOOT_MAX_IMG_SECTORS     "2000"       )
-    set(CY_BOOT_SCRATCH_SIZE        "0x00010000" )
-    set(MCUBOOT_BOOTLOADER_SIZE     "0x00012000" )
-    set(CY_BOOT_PRIMARY_1_START     "0x00012000" )  # Currently follows Bootloader sequentially
-    set(CY_BOOT_PRIMARY_1_SIZE      "0x000EE000" )
+    set(ENV{MCUBOOT_HEADER_SIZE}        "0x400"      )       # Must be a multiple of 1024
 
-    # When we use external FLASH (TODO)
-    #
-    # if(SLOT_1_EXTERNAL)
-    #   TODO: linker script for external?
-    #
-    #   set(CY_USE_EXTERNAL_FLASH  "1" )
-    #   set(CY_BOOT_PRIMARY_2_START  "0x????" )
-    #   set(CY_BOOT_PRIMARY_2_SIZE   "0x????" )
-    # endif()
+    # Set to external flash if not set by the environment
+    if(NOT DEFINED ENV{OTA_USE_EXTERNAL_FLASH})
+        set(ENV{OTA_USE_EXTERNAL_FLASH}     "1")
+    endif()
 
-    # Default to internal FLASH value for MCUBoot header signing
-    #
-    set(CY_FLASH_ERASE_VALUE        "0x00" )
+    if ("$ENV{OTA_USE_EXTERNAL_FLASH}" STREQUAL "0")
+        message("Using internal flash for Secondary Slot")
+        set(ENV{CY_FLASH_ERASE_VALUE}       "0x00" )
+        set(ENV{MCUBOOT_MAX_IMG_SECTORS}    "2000"       )       # 1MB app max
+        set(ENV{CY_BOOT_SCRATCH_SIZE}       "0x00010000" )
+        set(ENV{MCUBOOT_BOOTLOADER_SIZE}    "0x00018000" )
+        set(ENV{CY_BOOT_PRIMARY_1_START}    "0x00018000" )  # Currently follows Bootloader sequentially
+        set(ENV{CY_BOOT_PRIMARY_1_SIZE}     "0x000EE000" )
+        set(ENV{CY_BOOT_PRIMARY_2_SIZE}     "0x01000" )
+        set(ENV{CY_BOOT_SECONDARY_2_START}  "0x001E0000" )
+    else()
+        message("Using external flash for Secondary Slot")
+        set(ENV{CY_BOOT_USE_EXTERNAL_FLASH}  "1")
+        set(ENV{CY_FLASH_ERASE_VALUE}       "0xFF" )
+        set(ENV{MCUBOOT_MAX_IMG_SECTORS}    "3584"       )       # 1.75MB app max
+        set(ENV{CY_BOOT_SCRATCH_SIZE}       "0x00040000" )
+        set(ENV{MCUBOOT_BOOTLOADER_SIZE}    "0x00018000" )
+        set(ENV{CY_BOOT_PRIMARY_1_START}    "0x00018000" )  # Currently follows Bootloader sequentially
+        set(ENV{CY_BOOT_PRIMARY_1_SIZE}     "0x001C0000" )
+        set(ENV{CY_BOOT_SECONDARY_1_SIZE}   "0x001C0000" )
+    endif()
 
-    # Linker script for OTA changes!
+    # Linker script for OTA
     #
-    set(LINKER_SCRIPT_NAME "ota/${LINKER_SCRIPT_NAME}_ota_int")
+    set(ENV{LINKER_SCRIPT_NAME} "ota/$ENV{LINKER_SCRIPT_NAME}_ota_int")
+
+    # secure boot not supported for PSoC 062 boards
+    # DO NOT USE: set(CY_BOOT_SECURE_BOOT         "1")
 
 endif(OTA_SUPPORT)
 
@@ -107,17 +117,27 @@ afr_set_board_metadata(CODE_SIGNER "")
 afr_set_board_metadata(SUPPORTED_IDE "ModusToolbox")
 afr_set_board_metadata(RECOMMENDED_IDE "ModusToolbox")
 afr_set_board_metadata(IDE_ModusToolbox_NAME "ModusToolbox")
-afr_set_board_metadata(IDE_ModusToolbox_COMPILER "GCC")
+if ("${AFR_TOOLCHAIN}" STREQUAL "arm-gcc")
+    afr_set_board_metadata(IDE_ModusToolbox_COMPILER "GCC")
+elseif("${AFR_TOOLCHAIN}" STREQUAL "arm-armclang")
+    afr_set_board_metadata(IDE_ModusToolbox_COMPILER "ARM")
+elseif("${AFR_TOOLCHAIN}" STREQUAL "arm-iar")
+    afr_set_board_metadata(IDE_ModusToolbox_COMPILER "IAR")
+endif()
 afr_set_board_metadata(IDE_ModusToolbox_PROJECT_LOCATION "${AFR_ROOT_DIR}/projects/cypress/${AFR_BOARD_NAME}/ModusToolbox/aws_demos")
 
-#--------------------------------------------------------------------
-# Include general kit functions
-#
-include("${cy_psoc6_dir}/cmake/cy_kit_utils.cmake")
-
-cy_kit_generate(
+cy_add_link_libraries(
     DEVICE "CY8C624ABZI-D44"
-    LINKER_SCRIPT "${LINKER_SCRIPT_NAME}"
+    PORT_DIR "${cy_board_dir}/ports"
+    BSP_DIR "${app_dir}/application_code/cy_code"
+    CONFIG_DIRS "${include_dirs}"
     COMPONENTS "4343W;CM0P_SLEEP;CAPSENSE"
     DEFINES "CY_USE_LWIP"
 )
+
+if (NOT DEFINED LIB_MODE)
+    cy_create_exe_target(
+        EXE_APP_NAME ""
+        SOURCE_DIRS "${app_dir}/application_code"
+    )
+endif()

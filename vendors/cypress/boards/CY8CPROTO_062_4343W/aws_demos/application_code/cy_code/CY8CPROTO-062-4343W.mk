@@ -1,13 +1,12 @@
 ################################################################################
 # \file CY8CPROTO-062-4343W.mk
-# \version 1.0
 #
 # \brief
 # Define the CY8CPROTO-062-4343W target.
 #
 ################################################################################
 # \copyright
-# Copyright 2018-2019 Cypress Semiconductor Corporation
+# Copyright 2018-2020 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +28,14 @@ endif
 
 # MCU device selection
 DEVICE:=CY8C624ABZI-D44
-
 # Additional devices on the board
 ADDITIONAL_DEVICES:=CYW4343WKUBG
+# Default target core to CM4 if not already set
+CORE?=CM4
 
+ifeq ($(CORE),CM4)
 # Additional components supported by the target
-COMPONENTS+=CM0P_SLEEP BSP_DESIGN_MODUS
-
+COMPONENTS+=CM0P_SLEEP BSP_DESIGN_MODUS PSOC6HAL 4343W
 # Use CyHAL
 DEFINES+=CY_USING_HAL
+endif

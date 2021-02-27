@@ -74,10 +74,10 @@ VERBOSE=
 #
 #    COMPONENTS=foo bar
 #
-# ... then code in directories named COMPONENT_foo and COMPONENT_bar will be 
+# ... then code in directories named COMPONENT_foo and COMPONENT_bar will be
 # added to the build
 #
-COMPONENTS=FREERTOS 4343W CY8CKIT_062_WIFI_BT
+COMPONENTS=
 
 # Like COMPONENTS, but disable optional code that was enabled by default.
 DISABLE_COMPONENTS=
@@ -93,9 +93,9 @@ SOURCES=
 INCLUDES=
 
 # Add additional defines to the build process (without a leading -D).
-DEFINES=CYBSP_WIFI_CAPABLE CY_RTOS_AWARE CY_USE_LWIP
+DEFINES=
 
-# Select softfp or hardfp floating point. Default is softfp. 
+# Select softfp or hardfp floating point. Default is softfp.
 VFP_SELECT=
 
 # Additional / custom C compiler flags.
@@ -117,19 +117,7 @@ CXXFLAGS=
 ASFLAGS=
 
 # Additional / custom linker flags.
-ifeq ($(TOOLCHAIN),GCC_ARM)
-LDFLAGS=-Wl,--undefined=uxTopUsedPriority
-else
-ifeq ($(TOOLCHAIN),IAR)
-LDFLAGS=--keep uxTopUsedPriority
-else
-ifeq ($(TOOLCHAIN),ARM)
-LDFLAGS=--undefined=uxTopUsedPriority
-else
 LDFLAGS=
-endif
-endif
-endif
 
 # Additional / custom libraries to link in to the application.
 LDLIBS=
@@ -145,6 +133,13 @@ POSTBUILD=
 
 
 ################################################################################
+# Feature Configuration
+################################################################################
+# Enable or disable BLE module
+BLE_SUPPORT=1
+
+
+################################################################################
 # Paths
 ################################################################################
 
@@ -153,18 +148,18 @@ POSTBUILD=
 # This controls where automatic source code discovery looks for code.
 CY_APP_PATH=
 
-# Relative path to the "base" library. It provides the core makefile build 
+# Relative path to the "base" library. It provides the core makefile build
 # infrastructure.
-CY_BASELIB_PATH=$(CY_AFR_ROOT)/vendors/cypress/psoc6/psoc6make
+CY_BASELIB_PATH=$(CY_AFR_ROOT)/vendors/cypress/MTB/psoc6/psoc6make
 
-# Absolute path to the compiler's "bin" directory. 
+# Absolute path to the compiler's "bin" directory.
 #
 # The default depends on the selected TOOLCHAIN (GCC_ARM uses the ModusToolbox
 # IDE provided compiler by default).
 CY_COMPILER_PATH=
 
-# Include aFR configuration make file 
-include ./afr.mk
+# Include aFR configuration make file
+include $(CY_AFR_ROOT)/projects/cypress/make_support/afr.mk
 
 
 ################################################################################
@@ -194,13 +189,3 @@ endif
 
 $(info Tools Directory: $(CY_TOOLS_DIR))
 include $(CY_TOOLS_DIR)/make/start.mk
-.PHONY: generate_eclipse_project
-generate_mtb_project:
-	rm .project
-	@echo -e "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<projectDescription>\n	<name>aws_demos</name>\n	<comment></comment>\n	<projects>\n	</projects>\n	<buildSpec>\n		<buildCommand>\n			<name>org.eclipse.cdt.managedbuilder.core.genmakebuilder</name>\n			<triggers>clean,full,incremental,</triggers>\n			<arguments>\n			</arguments>\n		</buildCommand>\n		<buildCommand>\n			<name>org.eclipse.cdt.managedbuilder.core.ScannerConfigBuilder</name>\n			<triggers>full,incremental,</triggers>\n			<arguments>\n			</arguments>\n		</buildCommand>\n	</buildSpec>\n	<natures>\n		<nature>org.eclipse.cdt.core.cnature</nature>\n		<nature>org.eclipse.cdt.core.ccnature</nature>\n		<nature>com.cypress.studio.app.cymodusnature</nature>\n		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>\n		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>\n	</natures>\n	<linkedResources>\n" >>.project
-	@echo -e "$(foreach file,$(INCLUDES),\t\t<link>\n\t\t\t<name>$(patsubst ../../../../../%,%,$(file))</name>\n\t\t\t<type>2</type>\n\t\t\t<locationURI>$(patsubst ../../../../../%,PARENT-5-PROJECT_LOC/%,$(file))</locationURI>\n\t\t</link>\n)" >>.project
-	@echo -e "$(foreach file,$(CY_SEARCH_AVAILABLE_H_INCLUDES),\t\t<link>\n\t\t\t<name>$(patsubst ../../../../../%,%,$(file))</name>\n\t\t\t<type>2</type>\n\t\t\t<locationURI>$(patsubst ../../../../../%,PARENT-5-PROJECT_LOC/%,$(file))</locationURI>\n\t\t</link>\n)" >>.project
-	@echo -e "$(foreach file,$(CY_SEARCH_AVAILABLE_HPP_INCLUDES),\t\t<link>\n\t\t\t<name>$(patsubst ../../../../../%,%,$(file))</name>\n\t\t\t<type>2</type>\n\t\t\t<locationURI>$(patsubst ../../../../../%,PARENT-5-PROJECT_LOC/%,$(file))</locationURI>\n\t\t</link>\n)" >>.project
-	@echo -e "$(foreach file,$(SOURCES),\t\t<link>\n\t\t\t<name>$(patsubst ../../../../../%,%,$(file))</name>\n\t\t\t<type>1</type>\n\t\t\t<locationURI>$(patsubst ../../../../../%,PARENT-5-PROJECT_LOC/%,$(file))</locationURI>\n\t\t</link>\n)" >>.project
-	@echo -e "$(foreach file,$(CY_SEARCH_APP_SOURCE),\t\t<link>\n\t\t\t<name>$(patsubst ../../../../../%,%,$(file))</name>\n\t\t\t<type>1</type>\n\t\t\t<locationURI>$(patsubst ../../../../../%,PARENT-5-PROJECT_LOC/%,$(file))</locationURI>\n\t\t</link>\n)" >>.project
-	@echo -e "\t</linkedResources>\n</projectDescription>" >>.project

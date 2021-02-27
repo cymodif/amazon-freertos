@@ -4,7 +4,7 @@
  *
  * Copyright 2019, Cypress Semiconductor Corporation or a subsidiary of
  * Cypress Semiconductor Corporation. All Rights Reserved.
- * 
+ *
  * This software, associated documentation and materials ("Software")
  * is owned by Cypress Semiconductor Corporation,
  * or one of its subsidiaries ("Cypress") and is protected by and subject to
@@ -63,7 +63,7 @@
 // 9 + N        1           Key Value
 //
 
-enum eObjectHandles 
+enum eObjectHandles
 {
     eInvalidHandle = 0, /* According to PKCS #11 spec, 0 is never a valid object handle. */
     eAwsDevicePrivateKey = 1,
@@ -155,7 +155,7 @@ CK_OBJECT_HANDLE PKCS11_PAL_FindObject( uint8_t * pLabel,
     uint8_t usLength )
 {
     CK_OBJECT_HANDLE xHandle ;
-    
+
     if (cy_objstore_initialize(false, 1) != CY_RSLT_SUCCESS)
         return eInvalidHandle ;
 
@@ -221,19 +221,19 @@ CK_RV PKCS11_PAL_GetObjectValue( CK_OBJECT_HANDLE xHandle,
     else
     {
         return CKR_KEY_HANDLE_INVALID;
-    }    
+    }
 
     if (cy_objstore_find_object(xHandle, &index, &size) != CY_RSLT_SUCCESS)
     {
         configPRINT_STRING("cyafr: pkcs11: handle that previously existed is gone, internal error") ;
         return CKR_FUNCTION_FAILED ;
-    }       
+    }
 
     *pulDataSize = size ;
 
     *ppucData = (uint8_t *)malloc(size) ;
     if (*ppucData == NULL)
-        return CKR_DEVICE_MEMORY ;     
+        return CKR_DEVICE_MEMORY ;
 
     res = cy_objstore_read_object(xHandle, *ppucData, size) ;
     if (res != CY_RSLT_SUCCESS)
@@ -260,4 +260,8 @@ void PKCS11_PAL_GetObjectValueCleanup( uint8_t * pucData,
     free(pucData) ;
 }
 
+CK_RV PKCS11_PAL_Initialize( void )
+{
+    return CKR_OK;
+}
 /*-----------------------------------------------------------*/

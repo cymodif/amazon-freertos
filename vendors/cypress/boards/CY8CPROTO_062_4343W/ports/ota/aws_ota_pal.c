@@ -23,13 +23,28 @@
  * http://www.FreeRTOS.org
  */
 
+/**
+ * @file aws_ota_pal.c
+ * @brief Platform Abstraction layer for AWS OTA
+ *
+ * NOTE: This implementation will handle a single NSPE binary file (normal application) or
+ *       a tarball which has a "components.json" describing the files contained therein
+ *       "components.json" is generated during the build process and added to the tarball.
+ *
+ * NOTE: When using the tarball OTA file, you must use HTTP transport (not MQTT)
+ *       When using HTTP transport, the AFRTOS system heap must be increased (300k seems to work well)
+ *       see projects/cypress/<board>/mtb/<appname>/config_files/FreeRTOSConfig.h
+ *       #define configTOTAL_HEAP_SIZE                      ( ( size_t ) ( 300 * 1024 ) )
+ */
+
 /* C Runtime includes. */
+#include <stdlib.h>
 #include <string.h>
 
 /* Amazon FreeRTOS include. */
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
-#include "aws_ota_pal.h"
+#include "aws_iot_ota_pal.h"
 #include "bootutil/bootutil.h"
 #include "sysflash/sysflash.h"
 #include "flash_map_backend/flash_map_backend.h"
@@ -39,8 +54,41 @@
 #include "mbedtls/sha256.h"
 #include "iot_crypto.h"
 
+/* For aws_tests support */
+#include "aws_ota_agent_config.h"
 
-/* Specify the OTA signature algorithm we support on this platform. */
+/* Added for Flash Read */
+#include "flash_map_backend/flash_map_backend.h"
+#include "flash_qspi/flash_qspi.h"
+#include "cy_smif_psoc6.h"
+
+#include "untar.h"
+
+/* define CY_TEST_APP_VERSION_IN_TAR to test application version in TAR archive at start of OTA image download
+ * NOTE: This requires that the user set the version numbers in the header file and
+ *          in the Makefile and that they match.
+ *          APP_VERSION_MAJOR
+ *          APP_VERSION_MINOR
+ *          APP_VERSION_BUILD
+ */
+#ifdef CY_TEST_APP_VERSION_IN_TAR
+#include "aws_application_version.h"
+#endif
+
+/* For tarball support */
+/**
+ * @brief Tarball support file types recognized in components.json file
+ *
+ * The file type in the tarball
+ */
+#define CY_FILE_TYPE_SPE        "SPE"       /**< Secure Programming Environment (TFM) code type               */
+#define CY_FILE_TYPE_NSPE       "NSPE"      /**< Non-Secure Programming Environment (application) code type   */
+
+/**
+ * @brief File Signature Key
+ *
+ * The OTA signature algorithm we support on this platform.
+ */
 const char cOTA_JSON_FileSignatureKey[ OTA_FILE_SIG_KEY_STR_MAX_LENGTH ] = "sig-sha256-ecdsa";
 
 /***********************************************************************
@@ -56,17 +104,29 @@ static const char pcOTA_PAL_CERT_END[] = "-----END CERTIFICATE-----";
  * Macros
  *
  **********************************************************************/
-/* Debugging macros */
-#if 1
+
+#if 1   /* Debugging macros */
+/**
+ * @brief Macro to print system context information
+ */
 #define PRINT_SYSTEM_CONTEXT_PTR()
+/**
+ * @brief Macro to print Boot swap type
+ */
 #define PRINT_BOOT_SWAP_TYPE( title, boot_type )
+/**
+ * @brief Macro to print eState value
+ */
 #define PRINT_eSTATE( title, eSTATE )
+/**
+ * @brief Macro to print PAL state
+ */
 #define PRINT_PAL_STATE( title, palState )
 #else
-#define PRINT_SYSTEM_CONTEXT_PTR()  configPRINTF(("   sys_ctx: %p\r\n", sys_ctx));
+#define PRINT_SYSTEM_CONTEXT_PTR()  configPRINTF(("   sys_ctx: %p\n", sys_ctx));
 
 #define PRINT_BOOT_SWAP_TYPE( title, boot_type ) \
-    configPRINTF( ( "%s:: boot_swap_type:%d (%s)\r\n", ((title == NULL)?"":title), \
+    configPRINTF( ( "%s:: boot_swap_type:%d (%s)\n", ((title == NULL)?"":title), \
              boot_type, ((boot_type == 0) ? "Unknown" :             \
               (boot_type == BOOT_SWAP_TYPE_NONE) ? "None" :         \
               (boot_type == BOOT_SWAP_TYPE_TEST) ? "Test" :         \
@@ -76,7 +136,7 @@ static const char pcOTA_PAL_CERT_END[] = "-----END CERTIFICATE-----";
               (boot_type == BOOT_SWAP_TYPE_PANIC) ? "PANIC !!" : "Bad State")   ) );
 
 #define PRINT_eSTATE( title, state ) \
-    configPRINTF( ( "%s::   Sys Image State: 0x%lx (%s) \r\n", ((title == NULL)?"":title), \
+    configPRINTF( ( "%s::   Sys Image State: 0x%lx (%s) \n", ((title == NULL)?"":title), \
              state, ((state == eOTA_ImageState_Unknown) ? "Unknown" :  \
              (state == eOTA_ImageState_Testing) ? "Testing" :          \
              (state == eOTA_ImageState_Accepted) ? "Accepted" :        \
@@ -84,13 +144,14 @@ static const char pcOTA_PAL_CERT_END[] = "-----END CERTIFICATE-----";
              (state == eOTA_ImageState_Aborted) ? "Aborted" : "ERROR") ) );
 
 #define PRINT_PAL_STATE( title, palState ) \
-    configPRINTF( ( "%s::   PAL Image State: 0x%lx (%s) \r\n", ((title == NULL)?"":title), \
+    configPRINTF( ( "%s::   PAL Image State: 0x%lx (%s) \n", ((title == NULL)?"":title), \
             palState, ((palState == eOTA_PAL_ImageState_Unknown) ? "Unknown" :  \
              (palState == eOTA_PAL_ImageState_PendingCommit) ? "Pending" :          \
              (palState == eOTA_PAL_ImageState_Valid) ? "Valid" :        \
              (palState == eOTA_PAL_ImageState_Invalid) ? "Invalid" : "ERROR") ) );
 
-#endif
+#endif  /* Debugging Macros */
+
 /***********************************************************************
  *
  * Structures
@@ -102,14 +163,66 @@ static const char pcOTA_PAL_CERT_END[] = "-----END CERTIFICATE-----";
  * Variables
  *
  **********************************************************************/
-/* Keep track of system context */
+/**
+ * @brief Ptr to system context
+ *
+ * Keep track of system context between calls from the OTA Agent
+ *
+ */
 const OTA_FileContext_t *sys_ctx;
-/* keep trackof the state OTA Agent wants us to be. */
+
+/**
+ * @brief Current OTA Image State
+ *
+ * Keep track of the state OTA Agent wants us to be in.
+ */
 static OTA_ImageState_t current_OTA_ImageState = eOTA_ImageState_Unknown;
 
+/**
+ * @brief Last time we ran a signature check
+ *
+ * Keep track of the last signature check value for prvPAL_SetPlatformImageState
+ */
+static OTA_Err_t last_signature_check;
 
-/* buffer for reading image to verify signature */
-static uint8_t buffer[256];
+/**
+ * @brief FLASH write block
+ * This is used if a block is < Block size to satisfy requirements
+ * of flash_area_write()
+ */
+static uint8_t block_buffer[CY_FLASH_SIZEOF_ROW];
+/***********************************************************************
+ *
+ * UNTAR variables
+ *
+ **********************************************************************/
+
+/**
+ * @brief Context structure for parsing the tar file
+ */
+cy_untar_context_t  ota_untar_context;
+
+/**
+ * @brief Flag to denote this is a tar file
+ *
+ * We use this flag on subsequent chunks of file to know how to handle the data
+ */
+int ota_is_tar_archive;
+
+/**
+ * @brief Signature Verification Context
+ */
+void        *pvSigVerifyContext = NULL;
+
+/**
+ * @brief Signature Certificate size
+ */
+uint32_t    ulSignerCertSize;
+
+/**
+ * @brief pointer to Signer Certificate
+ */
+u8          *pucSignerCert = NULL;
 
 /***********************************************************************
  *
@@ -135,15 +248,15 @@ static uint8_t * prvPAL_ReadAndAssumeCertificate( const uint8_t * const pucCertN
                                                   uint32_t * const ulSignerCertSize )
 {
     uint8_t *pucCertEnd;
-    uint8_t *pucDecodedCertificate ;
+    uint8_t *pucDecodedCertificate;
     size_t ulDecodedCertificateSize;
 
     *ulSignerCertSize = sizeof(signingcredentialSIGNING_CERTIFICATE_PEM);
     /* Skip the "BEGIN CERTIFICATE" */
-    uint8_t* pucCertBegin = (uint8_t *)strstr (signingcredentialSIGNING_CERTIFICATE_PEM, pcOTA_PAL_CERT_BEGIN) ;
+    uint8_t* pucCertBegin = (uint8_t *)strstr (signingcredentialSIGNING_CERTIFICATE_PEM, pcOTA_PAL_CERT_BEGIN);
     if (pucCertBegin == NULL)
     {
-        configPRINTF( ( "%s() No Begin found for Certificate\r\n", __func__) );
+        configPRINTF( ( "%s() No Begin found for Certificate\n", __func__) );
         return NULL;
     }
     pucCertBegin += sizeof(pcOTA_PAL_CERT_BEGIN);
@@ -152,7 +265,7 @@ static uint8_t * prvPAL_ReadAndAssumeCertificate( const uint8_t * const pucCertN
     pucCertEnd =  (uint8_t *)strstr((char *)pucCertBegin, pcOTA_PAL_CERT_END);
     if (pucCertEnd == NULL)
     {
-        configPRINTF( ( "%s() No END found for Certificate\r\n", __func__) );
+        configPRINTF( ( "%s() No END found for Certificate\n", __func__) );
         return NULL;
     }
 
@@ -160,7 +273,7 @@ static uint8_t * prvPAL_ReadAndAssumeCertificate( const uint8_t * const pucCertN
     pucDecodedCertificate = (uint8_t *) pvPortMalloc(ulDecodedCertificateSize);
     if (pucDecodedCertificate == NULL)
     {
-        configPRINTF( ( "%s() Failed to decode the Certificate\r\n", __func__) );
+        configPRINTF( ( "%s() Failed to decode the Certificate\n", __func__) );
         return NULL;
     }
     mbedtls_base64_decode(pucDecodedCertificate, ulDecodedCertificateSize, &ulDecodedCertificateSize, pucCertBegin, pucCertEnd - pucCertBegin);
@@ -178,31 +291,227 @@ static uint8_t * prvPAL_ReadAndAssumeCertificate( const uint8_t * const pucCertN
  */
 static int eraseSlotTwo( void )
 {
-    const struct flash_area *fap ;
+    const struct flash_area *fap;
+    int image;
 
-    if (flash_area_open(FLASH_AREA_IMAGE_SECONDARY(0), &fap) != 0)
+    /* MCUBLOOT_IMAGE_NUMBER == 2, will ewrae both Secondary slot 1 and 2 */
+    for (image = 0; image < MCUBOOT_IMAGE_NUMBER; image++)
     {
-        configPRINTF( ( "%s() flash_area_open(FLASH_AREA_IMAGE_SECONDARY(0)) failed\r\n", __func__) );
-        return -1 ;
-    }
-    if (flash_area_erase(fap, 0, fap->fa_size) != 0)
-    {
-        configPRINTF( ( "%s() flash_area_erase(fap, 0) failed\r\n", __func__) );
-        return -1 ;
-    }
+        if (flash_area_open(FLASH_AREA_IMAGE_SECONDARY(image), &fap) != 0)
+        {
+            configPRINTF( ( "%s() flash_area_open(FLASH_AREA_IMAGE_SECONDARY(%d)) failed\n", __func__, image) );
+            return -1;
+        }
 
-    flash_area_close(fap) ;
+        if (flash_area_erase(fap, 0, fap->fa_size) != 0)
+        {
+            configPRINTF( ( "%s() flash_area_erase(fap, 0) (image:%d) failed\n", __func__, image) );
+            return -1;
+        }
 
-    return 0 ;
+        flash_area_close(fap);
+    }
+    return 0;
 }
 
 /**
- * @brief Verify the signature of the specified file.
+ * @brief Write different sized chunks in 512 byte blocks
  *
- * This function should be implemented if signature verification is not offloaded
- * to non-volatile memory io functions.
+ * @param fap           currently open Flash Area
+ * @param offset        offset into the Flash Area to write data
+ * @param source        data to use
+ * @param size          amount of data in source to write
  *
- * This function is called from prvPAL_Close().
+ * return    0 == success
+ *          -1 == error
+ */
+static int write_data_to_flash( const struct flash_area *fap,
+        uint32_t offset,
+        uint8_t * const source,
+        uint32_t size)
+{
+    uint32_t bytes_to_write;
+    uint32_t curr_offset;
+    uint8_t *curr_src;
+
+    bytes_to_write = size;
+    curr_offset = offset;
+    curr_src = source;
+
+    while (bytes_to_write > 0)
+    {
+        uint32_t chunk_size = bytes_to_write;
+        if (chunk_size > CY_FLASH_SIZEOF_ROW)
+        {
+            chunk_size = CY_FLASH_SIZEOF_ROW;
+        }
+
+        /* this should only happen on last part of last 4k chunk */
+        if (chunk_size % CY_FLASH_SIZEOF_ROW)
+        {
+            /* we will read a 512 byte block, write out data into the block, then write the whole block */
+            if (flash_area_read(fap, curr_offset, block_buffer, sizeof(block_buffer)) != 0)
+            {
+                configPRINTF( ( "%s() flash_area_read() failed\n", __func__) );
+                return -1;
+            }
+            memcpy (block_buffer, curr_src, chunk_size);
+
+            if (flash_area_write(fap, curr_offset, block_buffer, sizeof(block_buffer)) != 0)
+            {
+                configPRINTF( ( "%d:%s() flash_area_write() failed\n", __LINE__, __func__) );
+                return -1;
+            }
+
+        }
+        else
+        {
+            if (flash_area_write(fap, curr_offset, curr_src, chunk_size) != 0)
+            {
+                configPRINTF( ( "%d:%s() flash_area_write() failed\n", __LINE__, __func__) );
+                return -1;
+            }
+        }
+
+        curr_offset += chunk_size;
+        curr_src += chunk_size;
+        bytes_to_write -= chunk_size;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief callback to handle tar data
+ *
+ * @param ctxt          untar context
+ * @param file_index    index into ctxt->files for the data
+ * @param buffer        data to use
+ * @param file_offset   offset into the file to store data
+ * @param chunk_size    amount of data in buffer to use
+ * @param cb_arg        argument passed into initialization
+ *
+ * return   CY_RSLT_SUCCESS
+ *          CY_RSLT_TYPE_ERROR
+ */
+cy_untar_result_t ota_untar_write_callback(cy_untar_context_ptr ctxt,
+                                   uint16_t file_index,
+                                   uint8_t *buffer,
+                                   uint32_t file_offset,
+                                   uint32_t chunk_size,
+                                   void *cb_arg)
+{
+    int image = 0;
+    const struct flash_area *fap;
+    OTA_FileContext_t * const C = (OTA_FileContext_t *)cb_arg;
+
+    if ( (ctxt == NULL) || (buffer == NULL) || (C == NULL) )
+    {
+        return CY_UNTAR_ERROR;
+    }
+
+    if ( strncmp(ctxt->files[file_index].type, CY_FILE_TYPE_SPE, strlen(CY_FILE_TYPE_SPE)) == 0)
+    {
+        image = 1;  /* The TFM code, cm0 */
+    }
+    else if ( strncmp(ctxt->files[file_index].type, CY_FILE_TYPE_NSPE, strlen(CY_FILE_TYPE_NSPE)) == 0)
+    {
+        image = 0;  /* The application code, cm4 */
+    }
+    else
+    {
+        /* unknown file type */
+//        configPRINTF( ("%d:%s BAD FILE TYPE : >%s<\n", __LINE__, __func__, ctxt->files[file_index].type) );
+        return CY_UNTAR_ERROR;
+    }
+
+    if (flash_area_open(FLASH_AREA_IMAGE_SECONDARY(image), &fap) != 0)
+    {
+        configPRINTF( ( "%s() flash_area_open(%d) failed\n", __func__, image) );
+        return CY_UNTAR_ERROR;
+    }
+
+    if (write_data_to_flash(fap, file_offset, buffer, chunk_size) != 0)
+    {
+        configPRINTF( ( "%s() write_data_to_flash() failed\n", __func__) );
+        flash_area_close(fap);
+        return CY_UNTAR_ERROR;
+    }
+
+    flash_area_close(fap);
+
+    return CY_UNTAR_SUCCESS;
+}
+
+/**
+ * @brief Initialization routine for handling tarball OTA file
+ *
+ * @param ctxt[in,out]  pointer to untar context to be initialized
+ * @param C[in]         pointer to system OTA context
+ *
+ */
+cy_rslt_t ota_untar_init_context( cy_untar_context_t* ctxt, OTA_FileContext_t * const C )
+{
+    if (cy_untar_init( ctxt, ota_untar_write_callback, (void *)C ) == CY_RSLT_SUCCESS)
+    {
+        ota_is_tar_archive  = 1;
+        return CY_RSLT_SUCCESS;
+    }
+    return CY_RSLT_TYPE_ERROR;
+}
+
+/**
+ * @brief - set pending for the files contained in the TAR archive we just validated.
+ */
+static int cy_ota_untar_set_pending(void)
+{
+    int i;
+    int image = 0;
+    for (i = 0; i < ota_untar_context.num_files_in_json; i++ )
+    {
+        if ( strncmp(ota_untar_context.files[i].type, CY_FILE_TYPE_SPE, strlen(CY_FILE_TYPE_SPE)) == 0)
+        {
+            image = 1;  /* The TFM code, cm0 */
+        }
+        else if ( strncmp(ota_untar_context.files[i].type, CY_FILE_TYPE_NSPE, strlen(CY_FILE_TYPE_NSPE)) == 0)
+        {
+            image = 0;  /* The application code, cm4 */
+        }
+        else
+        {
+            /* unknown file type */
+            configPRINTF( ("%d:%s BAD FILE TYPE %d: >%s<\n", __LINE__, __func__, i, ota_untar_context.files[i].type) );
+            continue;
+        }
+        boot_set_pending(image, 0);
+    }
+
+    return CY_UNTAR_SUCCESS;
+
+}
+
+/**
+ * @brief De Initialize the signature checking data
+ *
+ */
+static void prvPAL_FileSignatureCheckDeinit( void )
+{
+    pvSigVerifyContext = NULL;
+    ulSignerCertSize = 0;
+    if (pucSignerCert  != NULL)
+    {
+        vPortFree( pucSignerCert );
+        pucSignerCert = NULL;
+    }
+}
+
+/**
+ * @brief Initialize the signature checking for tarball OTA
+ *        We keep track of the interim values for subsequent WriteBlock calls.
+ *
+ * NOTE: This function is used for a tarball OTA file.
+ *
+ * This function is called from prvPAL_CreateFile().
  *
  * @param[in] C OTA file context information.
  *
@@ -211,73 +520,103 @@ static int eraseSlotTwo( void )
  * kOTA_Err_SignatureCheckFailed if the signature verification fails.
  * kOTA_Err_BadSignerCert if the if the signature verification certificate cannot be read.
  */
-static OTA_Err_t prvPAL_CheckFileSignature( OTA_FileContext_t * const C )
+static OTA_Err_t prvPAL_FileSignatureCheckInit( OTA_FileContext_t * const C )
 {
-    OTA_Err_t   result = kOTA_Err_None;
-    uint32_t    ulSignerCertSize;
-    void        *pvSigVerifyContext;
-    u8          *pucSignerCert = 0;
-    uint32_t    addr;
-    const struct flash_area *fap;
-
-    if ( (C == NULL) || (C->lFileHandle == 0) || (C != sys_ctx ) )
+    if ( C == NULL )
     {
-        configPRINTF( ("%s() Bad Args C:%p\r\n", __func__, C) );
+        configPRINTF( ("%s() Bad Args C:%p\n", __func__, C) );
         return kOTA_Err_SignatureCheckFailed;
     }
 
-    fap = (const struct flash_area *)C->lFileHandle ;
+    /* Reset globals for incremental sign check and handle re-entrant calls */
+    prvPAL_FileSignatureCheckDeinit();
 
     /* Verify an ECDSA-SHA256 signature. */
     if( CRYPTO_SignatureVerificationStart( &pvSigVerifyContext, cryptoASYMMETRIC_ALGORITHM_ECDSA,
                                            cryptoHASH_ALGORITHM_SHA256 ) == pdFALSE )
     {
-        configPRINTF( ( "%s() CRYPTO_SignatureVerificationStart() failed\r\n", __func__) );
+        configPRINTF( ( "%s() CRYPTO_SignatureVerificationStart() failed\n", __func__) );
         return kOTA_Err_SignatureCheckFailed;
     }
 
     pucSignerCert = prvPAL_ReadAndAssumeCertificate( ( const u8 * const ) C->pucCertFilepath, &ulSignerCertSize );
-
     if( pucSignerCert == NULL )
     {
-        configPRINTF( ( "%s() prvPAL_ReadAndAssumeCertificate() failed\r\n", __func__) );
+        configPRINTF( ( "%s() prvPAL_ReadAndAssumeCertificate() failed\n", __func__) );
         return kOTA_Err_BadSignerCert;
     }
+    return kOTA_Err_None;
+}
 
-    addr = 0 ;
-    while (addr < C->ulFileSize)
+/**
+ * @brief incremental update of the signature for tarball OTA
+ *
+ * NOTE: This function is used for a tarball OTA file.
+ *
+ * This function is called from prvPAL_WriteBlock().
+ *
+ * @param[in] C         OTA file context information.
+ * @param[in] buffer    current buffer to include in signature check
+ * @param[in] size      size of buffer
+ *
+ * @return Below are the valid return values for this function.
+ * kOTA_Err_None if the signature verification passes.
+ * kOTA_Err_SignatureCheckFailed if the signature verification fails.
+ * kOTA_Err_BadSignerCert if the if the signature verification certificate cannot be read.
+ */
+static OTA_Err_t prvPAL_FileSignatureCheckStep( OTA_FileContext_t * const C, uint8_t * buffer, uint32_t size )
+{
+    if ( (C == NULL) || (C != sys_ctx ) || (pvSigVerifyContext == NULL) )
     {
-        uint32_t toread = C->ulFileSize - addr ;
-        if (toread > sizeof(buffer))
-            toread = sizeof(buffer) ;
-
-        if (flash_area_read(fap, addr, buffer, toread) < 0)
+        configPRINTF( ("%s() Bad Args C:%p\n", __func__, C) );
+        /* Free the signer certificate that we now own after prvReadAndAssumeCertificate(). */
+        prvPAL_FileSignatureCheckDeinit();
+        if (pvSigVerifyContext == NULL)
         {
-            configPRINTF( ( "%s() flash_area_read() failed\r\n", __func__) );
-            return kOTA_Err_SignatureCheckFailed ;
+            return kOTA_Err_BadSignerCert;
         }
+        return kOTA_Err_SignatureCheckFailed;
+    }
+    CRYPTO_SignatureVerificationUpdate( pvSigVerifyContext, buffer, size);
+    return kOTA_Err_None;
+}
 
-        CRYPTO_SignatureVerificationUpdate( pvSigVerifyContext, buffer, toread);
+/**
+ * @brief Do the final Signature Check for tarball OTA
+ *
+ * NOTE: This function is used for a tarball OTA file.
+ *
+ * This function is called from prvPAL_CloseFile().
+ *
+ * @param[in] C         OTA file context information.
+ *
+ * @return Below are the valid return values for this function.
+ * kOTA_Err_None if the signature verification passes.
+ * kOTA_Err_SignatureCheckFailed if the signature verification fails.
+ * kOTA_Err_BadSignerCert if the if the signature verification certificate cannot be read.
+ */
+static OTA_Err_t prvPAL_FileSignatureCheckFinal( OTA_FileContext_t * const C )
+{
+    OTA_Err_t   result = kOTA_Err_None;
 
-        addr += toread ;
-
-        /* Yield for a bit */
-        vTaskDelay(0);
+    if ( (C == NULL) || (C != sys_ctx ) || (pvSigVerifyContext == NULL) || (pucSignerCert == NULL) || (ulSignerCertSize == 0) )
+    {
+        /* Free the signer certificate that we now own after prvReadAndAssumeCertificate(). */
+        prvPAL_FileSignatureCheckDeinit();
+        configPRINTF( ( "%s() failed\n", __func__) );
+        return kOTA_Err_BadSignerCert;
     }
 
     if( CRYPTO_SignatureVerificationFinal( pvSigVerifyContext, ( char * ) pucSignerCert, ulSignerCertSize,
                                            C->pxSignature->ucData, C->pxSignature->usSize ) == pdFALSE )
     {
-        configPRINTF( ( "%s() CRYPTO_SignatureVerificationFinal() failed\r\n", __func__) );
+        configPRINTF( ( "%s() CRYPTO_SignatureVerificationFinal() failed\n", __func__) );
         result = kOTA_Err_SignatureCheckFailed;
     }
+    last_signature_check = result;
 
     /* Free the signer certificate that we now own after prvReadAndAssumeCertificate(). */
-    if( pucSignerCert != NULL )
-    {
-        vPortFree( pucSignerCert );
-    }
-
+    prvPAL_FileSignatureCheckDeinit();
     return result;
 }
 
@@ -306,21 +645,29 @@ OTA_Err_t prvPAL_Abort( OTA_FileContext_t * const C )
     OTA_Err_t   result = kOTA_Err_None;
     const struct flash_area *fap;
 
+    if ( (C != NULL) && (C->lFileHandle == (uint32_t)NULL) )
+    {
+        return kOTA_Err_None;
+    }
+
     if ( (C == NULL) || (C != sys_ctx ) )
     {
-        configPRINTF( ( "%s() BAD ARGS\r\n", __func__) );
+        configPRINTF( ( "%s() BAD ARGS\n", __func__) );
         return kOTA_Err_FileAbort;
     }
 
-    fap = (const struct flash_area *)C->lFileHandle ;
+    fap = (const struct flash_area *)C->lFileHandle;
     if (fap != NULL)
     {
         flash_area_close(fap);  /* May have been closed already */
     }
 
+    /* reset our globals */
     C->lFileHandle = 0;
     sys_ctx = 0;
 
+    /* Free the signer certificate that we now own after prvReadAndAssumeCertificate(). */
+    prvPAL_FileSignatureCheckDeinit();
     return result;
 }
 
@@ -353,26 +700,36 @@ OTA_Err_t prvPAL_CreateFileForRx( OTA_FileContext_t * const C )
 
     if (C == NULL)
     {
-        configPRINTF( ( "%s() BAD ARGS\r\n", __func__) );
+        configPRINTF( ( "%s() BAD ARGS\n", __func__) );
         return kOTA_Err_RxFileCreateFailed;
     }
 
     /* prepare the slot for writing */
-    configPRINTF( ("%s() erase slot two\r\n", __func__) );
-    eraseSlotTwo() ;
+    eraseSlotTwo();
+
+    /* Must set something into lFileHandle and we use for MQTT downloads */
     if (flash_area_open(FLASH_AREA_IMAGE_SECONDARY(0), &fap) != 0)
     {
-        configPRINTF( ( "%s() flash_area_open() failed\r\n", __func__) );
+        configPRINTF( ( "%s() flash_area_open() failed\n", __func__) );
         return kOTA_Err_RxFileCreateFailed;
     }
 
+    /* NOTE: lFileHandle MUST be non-NULL of the OTA Agent will error out */
     C->lFileHandle = (int32_t)fap;
     sys_ctx = C;
 
-    return kOTA_Err_None ;
+    /* initialize these for checking later */
+    last_signature_check = kOTA_Err_Uninitialized;
+    pvSigVerifyContext = NULL;
+    pvSigVerifyContext = NULL;
+    pucSignerCert = NULL;
+    ulSignerCertSize = 0;
+
+    return kOTA_Err_None;
 }
 
-/* @brief Authenticate and close the underlying receive file in the specified OTA context.
+/**
+ * @brief Authenticate and close the underlying receive file in the specified OTA context.
  *
  * @note The input OTA_FileContext_t C is checked for NULL by the OTA agent before this
  * function is called. This function is called only at the end of block ingestion.
@@ -397,44 +754,102 @@ OTA_Err_t prvPAL_CreateFileForRx( OTA_FileContext_t * const C )
  */
 OTA_Err_t prvPAL_CloseFile( OTA_FileContext_t * const C )
 {
-    const struct flash_area *fap ;
     OTA_Err_t               result = kOTA_Err_None;
 
     if ( (C == NULL) || (C != sys_ctx ) || (C->lFileHandle == 0))
     {
-        configPRINTF( ( "%s() BAD ARGS\r\n", __func__) );
-        return kOTA_Err_FileClose;
+        configPRINTF( ( "%s() BAD ARGS\n", __func__) );
+        result = kOTA_Err_FileClose;
+        goto _exit_CloseFile;
     }
-
-    configPRINTF( ( "%s()\r\n", __func__) );
 
     /* we got the data, try to verify it */
     if (C->pxSignature == NULL)
     {
-        configPRINTF( ( "%s() No pxSignature from AWS\r\n", __func__) );
-        result = kOTA_Err_SignatureCheckFailed ;
+        configPRINTF( ( "%s() No pxSignature from AWS\n", __func__) );
+        result = kOTA_Err_SignatureCheckFailed;
+        goto _exit_CloseFile;
+    }
+
+    /* For TAR files, we must use HTTP transport so that the file blocks come down
+     * in sequential order - we need start of TAR (components.json) first, and we
+     * do not store all of the blocks. Signature must be checked in sequential order.
+     */
+    if (ota_is_tar_archive == 1)
+    {
+        /* Do the final check for signature */
+        if (prvPAL_FileSignatureCheckFinal(C) != kOTA_Err_None)
+        {
+            configPRINTF( ( "%s() TAR prvPAL_FileSignatureCheckFinal() failed\n", __func__) );
+            eraseSlotTwo();
+            result = kOTA_Err_SignatureCheckFailed;
+        }
     }
     else
     {
-        result = prvPAL_CheckFileSignature(C);
+        /* non-tar OTA, we downloaded a single file, might have been MQTT.
+         * If MQTT, the file blocks may come in non-sequential order.
+         * We need to run signature check across entire downloaded file at once.
+         */
+        const struct flash_area *fap;
+
+        //configPRINTF( ( "%s() BINARY file, check whole file for signature\n", __func__) );
+        fap = (const struct flash_area *)C->lFileHandle;
+        if (fap == 0)
+        {
+            configPRINTF( ( "%s() ERROR: fap == NULL\n", __func__) );
+            result = kOTA_Err_SignatureCheckFailed;
+            goto _exit_CloseFile;
+        }
+
+        result = prvPAL_FileSignatureCheckInit( C );
         if (result == kOTA_Err_None)
         {
-            /* Mark this new OTA image as pending, it will be the permanent
-            * bootable image going forward.
-            */
-            configPRINTF( ("%s() prvPAL_CheckFileSignature() GOOD\r\n", __func__) );
-            boot_set_pending(0);
-        }
-        else
-        {
-            configPRINTF( ( "%s() prvPAL_CheckFileSignature() failed\r\n", __func__) );
-            result = kOTA_Err_SignatureCheckFailed ;
+            uint32_t addr;
+            addr = 0;
+            while (addr < C->ulFileSize)
+            {
+                uint32_t toread = C->ulFileSize - addr;
+                /* Re-use coalesce buffer as we have completed download (it is not used for non-TAR OTA) */
+                if (toread > sizeof(ota_untar_context.coalesce_buffer) )
+                    toread = sizeof(ota_untar_context.coalesce_buffer);
+
+                if (flash_area_read(fap, addr, ota_untar_context.coalesce_buffer, toread) < 0)
+                {
+                    configPRINTF( ( "%s() flash_area_read() failed for signature check\r\n", __func__) );
+                    result = kOTA_Err_SignatureCheckFailed;
+                    goto _exit_CloseFile;
+                }
+
+                CRYPTO_SignatureVerificationUpdate( pvSigVerifyContext, ota_untar_context.coalesce_buffer, toread);
+
+                addr += toread;
+            }
+            if (prvPAL_FileSignatureCheckFinal(C) != kOTA_Err_None)
+            {
+                configPRINTF( ( "%s() BIN prvPAL_FileSignatureCheckFinal() failed\n", __func__) );
+                eraseSlotTwo();
+                result = kOTA_Err_SignatureCheckFailed;
+            }
         }
     }
 
-    fap = (const struct flash_area *)C->lFileHandle ;
-    flash_area_close(fap);
+_exit_CloseFile:
 
+    if ( C != NULL && C->lFileHandle != 0 )
+    {
+        const struct flash_area *fap;
+        fap = (const struct flash_area *)C->lFileHandle;
+        flash_area_close(fap);
+    }
+
+    /* Free the signer certificate that we now own after prvReadAndAssumeCertificate(). */
+    prvPAL_FileSignatureCheckDeinit();
+
+    if (result != kOTA_Err_None)
+    {
+        current_OTA_ImageState = eOTA_ImageState_Unknown;
+    }
     return result;
 }
 
@@ -445,37 +860,137 @@ OTA_Err_t prvPAL_CloseFile( OTA_FileContext_t * const C )
  * function is called.
  * The file pointer/handle C->pucFile, is checked for NULL by the OTA agent before this
  * function is called.
- * pacData is checked for NULL by the OTA agent before this function is called.
+ * pcData is checked for NULL by the OTA agent before this function is called.
  * ulBlockSize is validated for range by the OTA agent before this function is called.
  * ulBlockIndex is validated by the OTA agent before this function is called.
  *
  * @param[in] C OTA file context information.
  * @param[in] ulOffset Byte offset to write to from the beginning of the file.
- * @param[in] pacData Pointer to the byte array of data to write.
+ * @param[in] pcData Pointer to the byte array of data to write.
  * @param[in] ulBlockSize The number of bytes to write.
  *
  * @return The number of bytes written on a success, or a negative error code from the platform abstraction layer.
  */
+
 int16_t prvPAL_WriteBlock( OTA_FileContext_t * const C,
                            uint32_t ulOffset,
                            uint8_t * const pcData,
                            uint32_t ulBlockSize )
 {
-    const struct flash_area *fap ;
 
-    if ( (C == NULL) || (C != sys_ctx ) || (C->lFileHandle == 0))
+    if ( (C == NULL) || (C != sys_ctx ) )
     {
-        configPRINTF( ( "%s() BAD ARGS\r\n", __func__ ) );
+        configPRINTF( ( "%s() BAD ARGS\n", __func__ ) );
         return -1;
     }
 
-    fap = (const struct flash_area *)C->lFileHandle ;
-    if (flash_area_write(fap, ulOffset, pcData, ulBlockSize) != 0)
+    /* we need to check some things when we receive the first block */
+    if (ulOffset == 0UL)
     {
-        configPRINTF( ( "%s() flash_area_write() failed\r\n", __func__) );
-        return -1;
+
+        /*
+         * initialize file signature checking
+         */
+        if (prvPAL_FileSignatureCheckInit(C) != kOTA_Err_None)
+        {
+            configPRINTF( ( "%s() prvPAL_FileSignatureCheckInit() FAILED\n", __func__ ) );
+            return -1;
+        }
+
+        /*
+         * Check for incoming tarball (as opposed to a single file OTA)
+         */
+        if (cy_is_tar_header( pcData, ulBlockSize) == CY_UNTAR_SUCCESS)
+        {
+            if (ota_untar_init_context(&ota_untar_context, C) != CY_RSLT_SUCCESS)
+            {
+                configPRINTF( ( "%s() ota_untar_init_context() FAILED! \n", __func__) );
+                return -1;
+            }
+        }
     }
-    return ulBlockSize ;
+
+    /* treat a tar file differently from a "normal" OTA */
+    if (ota_is_tar_archive != 0)
+    {
+        uint32_t consumed = 0;
+
+        /* check the signature incrementally over every block received */
+        if (prvPAL_FileSignatureCheckStep( C, pcData, ulBlockSize) != kOTA_Err_None)
+        {
+            configPRINTF( ( "%s() FileSignatureCheckStep() offset:%ld FAILED!\n", __func__, ulOffset) );
+            return -1;
+        }
+
+        while( consumed < ulBlockSize )
+        {
+            cy_untar_result_t result;
+            result = cy_untar_parse(&ota_untar_context, (ulOffset + consumed), &pcData[consumed], (ulBlockSize- consumed), &consumed);
+            if ( (result == CY_UNTAR_ERROR) || (result == CY_UNTAR_INVALID))
+            {
+                configPRINTF( ( "%s() cy_untar_parse() FAIL consumed: %ld sz:%ld result:%ld)!\n", __func__, consumed, ulBlockSize, result) );
+                return -1;
+            }
+            /* Yield for a bit */
+            vTaskDelay(1);
+        }
+
+        /* with the tarball we get a version - check if it is > current so we can bail early */
+#ifdef CY_TEST_APP_VERSION_IN_TAR
+        if (ota_untar_context.version[0] != 0)
+        {
+            /* example version string "<major>.<minor>.<build>" */
+            uint16_t major = 0;
+            uint16_t minor = 0;
+            uint16_t build = 0;
+            char *dot;
+            major = atoi(ota_untar_context.version);
+            dot = strstr(ota_untar_context.version, ".");
+            if (dot != NULL)
+            {
+                dot++;
+                minor = atoi(dot);
+                dot = strstr(dot, ".");
+                if (dot != NULL)
+                {
+                    dot++;
+                    build = atoi(dot);
+
+                    if ( (major < APP_VERSION_MAJOR) ||
+                          ( (major == APP_VERSION_MAJOR) &&
+                            (minor < APP_VERSION_MINOR)) ||
+                          ( (major == APP_VERSION_MAJOR) &&
+                            (minor == APP_VERSION_MINOR) &&
+                            (build <= APP_VERSION_BUILD)))
+                     {
+                         configPRINTF( ( "%s() OTA image version %d.%d.%d <= current %d.%d.%d-- bail!\r\n", __func__,
+                                 major, minor, build,
+                                 APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_BUILD) );
+
+                         return -1;
+                     }
+                }
+            }
+        }
+#endif  /* CY_TEST_APP_VERSION_IN_TAR */
+    }
+    else
+    {
+        /* non-tarball OTA here */
+        const struct flash_area *fap;
+        fap = (const struct flash_area *)C->lFileHandle;
+        if (fap == NULL)
+        {
+            configPRINTF( ( "%s() flash_area_pointer is NULL\n", __func__) );
+            return -1;
+        }
+
+        if (write_data_to_flash( fap, ulOffset, pcData, ulBlockSize) == -1)
+        {
+            return -1;
+        }
+    }
+    return ulBlockSize;
 }
 
 /**
@@ -492,7 +1007,24 @@ int16_t prvPAL_WriteBlock( OTA_FileContext_t * const C,
  */
 OTA_Err_t prvPAL_ActivateNewImage( void )
 {
-    configPRINTF( ("%s() \r\n", __func__) );
+    configPRINTF( ("%s() \n", __func__) );
+    /* Mark this new OTA image as pending, it will be the permanent
+    * bootable image going forward.
+    */
+    if ( (ota_is_tar_archive != 0) && (ota_untar_context.magic == CY_UNTAR_CONTEXT_MAGIC) )
+    {
+        configPRINTF( ("%s() TAR prvPAL_FileSignatureCheckFinal() GOOD\n", __func__) );
+        cy_ota_untar_set_pending();
+    }
+    else
+    {
+        /* Mark this new OTA image as pending, it will be the permanent
+        * bootable image going forward.
+        */
+        configPRINTF( ("%s() BIN prvPAL_FileSignatureCheckFinal() GOOD\n", __func__) );
+        /* Non-tar only has type 0 (NSPE) update */
+        boot_set_pending(0, 0);
+    }
     prvPAL_ResetDevice();
     return kOTA_Err_None;
 }
@@ -512,10 +1044,10 @@ OTA_Err_t prvPAL_ResetDevice( void )
 {
     /* we want to wait a bit when in DEBUG builds so the logging mechanism can finish before resetting */
     vTaskDelay(pdMS_TO_TICKS( 1000UL ));
-    printf("%s()   RESETTING NOW !!!!\r\n", __func__);
-    vTaskDelay(pdMS_TO_TICKS( 100UL ));
-    NVIC_SystemReset() ;
-    return kOTA_Err_None ;
+    configPRINTF( ("%s()   RESETTING NOW !!!!\n", __func__) );
+    vTaskDelay(pdMS_TO_TICKS( 1000UL ));
+    NVIC_SystemReset();
+    return kOTA_Err_None;
 }
 
 /**
@@ -557,6 +1089,10 @@ OTA_Err_t prvPAL_SetPlatformImageState( OTA_ImageState_t eState )
     PRINT_SYSTEM_CONTEXT_PTR();
     PRINT_BOOT_SWAP_TYPE(NULL, boot_swap_type());
 
+    if( eState == eOTA_ImageState_Unknown || eState > eOTA_LastImageState )
+    {
+        return kOTA_Err_BadImageState;
+    }
 
     if (sys_ctx == NULL)
     {
@@ -565,24 +1101,33 @@ OTA_Err_t prvPAL_SetPlatformImageState( OTA_ImageState_t eState )
         {
         case eOTA_ImageState_Accepted:
             /* Mark Slot 0 image as valid */
-            boot_set_confirmed();
-//            configPRINTF( ("%s() Accepted <----------------------------------<<\r\n", __func__) );
+            // We need to know if the last check was good...
+            if (last_signature_check == kOTA_Err_None)
+            {
+                boot_set_confirmed();
+                configPRINTF( ("%s() Set confirmed()\n", __func__) );
+            }
+            else
+            {
+                result = kOTA_Err_CommitFailed;
+            }
             break;
         case eOTA_ImageState_Rejected:
+            /* we haven't closed the file, and the OTA Agent has rejected the download */
+            result = kOTA_Err_None;
+            break;
         case eOTA_ImageState_Aborted:
             /* We are not actively downloading, this pertains to an invalid download job
              * or an aborted job. We erase secondary slot when we start a new download,
-             * and do not consider secondary slot ready unless dowlnoad completes and
+             * and do not consider secondary slot ready unless download completes and
              * signature checked. nothing to do here, but set our state to Accepted so
              * we store it for GetImageState().
              */
             eState = eOTA_ImageState_Accepted;
             break;
         case eOTA_ImageState_Testing:
-//            configPRINTF( ("%s() OTA Image in TESTING.\r\n", __func__) );
             break;
         default:
-            configPRINTF( ("%s() New In-process OTA Unknown state %d.\r\n", __func__, eState) );
             result = kOTA_Err_BadImageState;
             break;
         }
@@ -591,8 +1136,15 @@ OTA_Err_t prvPAL_SetPlatformImageState( OTA_ImageState_t eState )
     {
         /* We are in the middle of a new download
          * Abort or Reject refers to the new download, not the primary slot.
-         * Not what to do here, if anything...
+         * Nothing to do here.
          */
+        if (eState == eOTA_ImageState_Accepted)
+        {
+            if (sys_ctx->lFileHandle != (uint32_t)NULL)
+            {
+                result = kOTA_Err_CommitFailed;
+            }
+        }
     }
 
     /* keep track of the state OTA Agent sent. */
@@ -645,21 +1197,38 @@ OTA_PAL_ImageState_t prvPAL_GetPlatformImageState( void )
     PRINT_SYSTEM_CONTEXT_PTR();
     PRINT_BOOT_SWAP_TYPE(NULL, boot_swap_type());
 
-    /* After swap/copy of secondary slot to primary slot, boot_swap_type() returns NONE.
+    /**
+     * After swap/copy of secondary slot to primary slot, boot_swap_type() returns NONE.
      * It does not reflect the fact we may be in self-test mode.
-     * Use the saved value from SetImageState()
-     * to report our status.
+     * Use the saved value from SetImageState() to report our status.
      */
-    if( current_OTA_ImageState == eOTA_ImageState_Testing )
+    if (current_OTA_ImageState == eOTA_ImageState_Testing)
     {
         /* in self-test, report Pending. */
         result = eOTA_PAL_ImageState_PendingCommit;
     }
-    else
+    else if ( (current_OTA_ImageState == eOTA_ImageState_Rejected ) ||
+              (current_OTA_ImageState == eOTA_ImageState_Aborted ) )
+    {
+        result = eOTA_PAL_ImageState_Invalid;
+    }
+    else if (current_OTA_ImageState == eOTA_ImageState_Accepted)
     {
         result = eOTA_PAL_ImageState_Valid;
     }
+    else
+    {
+        //result = eOTA_PAL_ImageState_Valid;
+        result = eOTA_ImageState_Unknown;
+    }
 
     PRINT_PAL_STATE( "<------------------------- prvPAL_GetPlatformImageState() DONE: ", result);
-    return result ;
+    return result;
 }
+
+/*-----------------------------------------------------------*/
+
+/* Provide access to private members for testing. */
+#ifdef AMAZON_FREERTOS_ENABLE_UNIT_TESTS
+    #include "aws_ota_pal_test_access_define.h"
+#endif
